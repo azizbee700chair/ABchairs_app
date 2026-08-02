@@ -1,0 +1,1478 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stul Nazorati va Boshqaruvi</title>
+
+<!-- SheetJS (Excel ga eksport qilish uchun) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<!-- Firebase SDK 8.x (Realtime Database uchun moslashtirilgan) -->
+<!-- Bu versiya Firebase o'rniga Google Sheets (Apps Script) bilan ishlaydi -->
+
+<style>
+  :root {
+    --bg: #F8FAFC;
+    --surface: #FFFFFF;
+    --ink: #0F172A;
+    --ink-soft: #64748B;
+    --line: #E2E8F0;
+    --primary: #2563EB;
+    --primary-hover: #1D4ED8;
+    --primary-bg: #EFF6FF;
+    --accent: #D97706;
+    --accent-bg: #FEF3C7;
+    --ok: #10B981;
+    --ok-bg: #D1FAE5;
+    --wait: #F59E0B;
+    --wait-bg: #FEF3C7;
+    --danger: #EF4444;
+    --danger-bg: #FEE2E2;
+    --shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--ink); -webkit-font-smoothing: antialiased; min-height: 100vh; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  #app { max-width: 600px; margin: 0 auto; min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; position: relative; }
+  
+  header.topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; background: #0F172A; color: #fff;
+    position: sticky; top: 0; z-index: 10;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  header.topbar .brand { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  header.topbar .brand .tag { color: var(--accent); font-size: 12px; background: rgba(217, 119, 6, 0.2); padding: 2px 8px; border-radius: 6px; }
+  
+  /* Online / Offline status */
+  .net-status { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .net-status.online { background: #D1FAE5; color: #047857; }
+  .net-status.offline { background: #FEE2E2; color: #B91C1C; }
+
+  .langsw { display: flex; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; overflow: hidden; }
+  .langsw button { background: transparent; border: none; color: #fff; font-size: 12px; font-weight: 600; padding: 6px 12px; cursor: pointer; opacity: .6; }
+  .langsw button.active { background: var(--primary); opacity: 1; }
+
+  .userbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--line);
+    font-size: 13px; color: var(--ink-soft);
+  }
+  .userbar .user-avatar {
+    width: 32px; height: 32px; border-radius: 50%; background: var(--primary-bg);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; color: var(--primary); margin-right: 8px;
+  }
+  .logout { background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: var(--danger); font-weight: 600; }
+
+  main { flex: 1; padding: 16px; padding-bottom: 80px; }
+  
+  .admin-grid-menu { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
+  .menu-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+    cursor: pointer; transition: all 0.2s ease; box-shadow: var(--shadow);
+  }
+  .menu-card:hover, .menu-card.active { border-color: var(--primary); background: var(--primary-bg); }
+  .menu-card .icon { font-size: 24px; }
+  .menu-card .title { font-weight: 700; font-size: 14px; color: var(--ink); }
+  .menu-card .sub { font-size: 11px; color: var(--ink-soft); }
+
+  h2.section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-soft); margin: 20px 0 10px; display: flex; justify-content: space-between; align-items: center; }
+
+  .collapsible-header {
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; user-select: none; padding: 4px 0;
+  }
+  .collapsible-header .arrow { font-size: 12px; transition: transform 0.2s ease; }
+  .collapsible-header.open .arrow { transform: rotate(180deg); }
+
+  .scrollable-card { max-height: 280px; overflow-y: auto; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); position: relative; }
+  
+  .ticket { display: flex; align-items: stretch; gap: 12px; overflow: hidden; }
+  .ticket .stub {
+    width: 50px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 12px; color: var(--primary); background: var(--primary-bg);
+    border-radius: 10px; writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
+  }
+  .ticket .chair-img { width: 50px; height: 50px; border-radius: 8px; object-fit: cover; background: #eee; flex-shrink: 0; }
+  .ticket .body { flex: 1; }
+  .row-between { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .model { font-weight: 700; font-size: 15px; color: var(--ink); }
+  .meta { font-size: 12px; color: var(--ink-soft); margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; text-transform: uppercase; }
+  .badge.wait { background: var(--wait-bg); color: var(--wait); }
+  .badge.progress { background: var(--primary-bg); color: var(--primary); }
+  .badge.done { background: var(--ok-bg); color: var(--ok); }
+  .badge.susal { background: #F3E8FF; color: #7E22CE; }
+  .badge.color-tag { background: #F1F5F9; color: #334155; border: 1px solid var(--line); }
+
+  .actions { margin-top: 12px; display: flex; gap: 8px; }
+  button.primary {
+    background: var(--primary); color: #fff; border: none; border-radius: 10px; padding: 10px 16px;
+    font-weight: 700; font-size: 13px; cursor: pointer; flex: 1; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+  }
+  button.primary:hover { background: var(--primary-hover); }
+  button.excel-btn {
+    background: #10B981; color: #fff; border: none; border-radius: 10px; padding: 10px 16px;
+    font-weight: 700; font-size: 13px; cursor: pointer; width: 100%; margin-bottom: 12px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+  }
+  button.secondary {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 16px; font-weight: 600; font-size: 13px; cursor: pointer; flex: 1;
+  }
+  button.danger-btn {
+    background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 10px;
+    padding: 8px 12px; font-weight: 600; font-size: 12px; cursor: pointer;
+  }
+  button.edit-btn {
+    background: var(--primary-bg); color: var(--primary); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: 10px;
+    padding: 8px 12px; font-weight: 600; font-size: 12px; cursor: pointer;
+  }
+  
+  .empty { text-align: center; padding: 30px 10px; color: var(--ink-soft); font-size: 13px; }
+  input, select { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; margin-bottom: 12px; outline: none; background: #fff; }
+  input:focus, select:focus { border-color: var(--primary); }
+  label.field-label { font-size: 12px; font-weight: 600; color: var(--ink-soft); display: block; margin-bottom: 4px; }
+
+  .login-screen {
+    flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px;
+    background: linear-gradient(rgba(15, 23, 42, 0.75), rgba(15, 23, 42, 0.85)), 
+                url('https://file.element.ing/v1/AUTH_element-Ing-01/file/ca1d44eb-24e5-422f-b4be-b435ff50e20e') no-repeat center center/cover;
+  }
+  .login-card {
+    width: 100%; max-width: 380px; 
+    background: rgba(255, 255, 255, 0.92); 
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 24px; padding: 32px 28px; 
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3); 
+  }
+  .login-card .stamp { 
+    font-weight: 800; font-size: 26px; color: #0F172A; 
+    margin-bottom: 2px; display: flex; align-items: center; justify-content: center; gap: 8px; 
+  }
+  .login-card select, .login-card input {
+    background: rgba(248, 250, 252, 0.9);
+    border: 1.5px solid var(--line);
+    font-weight: 500;
+  }
+  .login-card select:focus, .login-card input:focus {
+    background: #fff;
+    border-color: var(--primary);
+  }
+  .err { color: var(--danger); font-size: 12px; margin-bottom: 12px; font-weight: 600; text-align: center; }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; backdrop-filter: blur(4px); }
+  .modal { background: var(--surface); border-radius: 20px; padding: 24px; width: 100%; max-width: 420px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); max-height: 90vh; overflow-y: auto; }
+  .modal h3 { margin: 0 0 8px; font-size: 18px; }
+  .modal p { margin: 0 0 16px; font-size: 13px; color: var(--ink-soft); }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+  .list-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .list-row:last-child { border-bottom: none; }
+  
+  .total-summary { background: var(--primary-bg); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: 12px; padding: 14px 16px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .total-summary .label { font-weight: 700; color: var(--primary); font-size: 13px; }
+  .total-summary .number { font-weight: 800; font-size: 18px; color: var(--primary); }
+
+  .color-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+  .color-btn { border: 2px solid var(--line); border-radius: 10px; padding: 10px; text-align: center; cursor: pointer; background: #fff; font-size: 12px; font-weight: 700; }
+  .color-btn.selected { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); }
+
+  .filter-box { display: flex; gap: 8px; background: var(--surface); padding: 12px; border-radius: 12px; border: 1px solid var(--line); margin-bottom: 16px; }
+  .filter-box div { flex: 1; }
+  .filter-box input, .filter-box select { margin-bottom: 0; padding: 8px; font-size: 12px; }
+  .time-text { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+
+  .clean-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .clean-table th { text-align: left; padding: 8px 4px; font-weight: 700; color: var(--ink-soft); border-bottom: 1px solid var(--line); position: sticky; top: 0; background: #fff; }
+  .clean-table td { padding: 10px 4px; vertical-align: top; color: var(--ink); }
+  .clean-table tr:nth-child(even) { background: rgba(0,0,0,0.015); }
+
+  .back-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; color: var(--primary); cursor: pointer; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// --- GOOGLE SHEETS (APPS SCRIPT) SOZLAMALARI ---
+// MUHIM: pastdagi manzilni o'zingizning Apps Script "Web app" deploy manzilingizga almashtiring (.../exec bilan tugashi kerak)
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwkntoYLEFECZKb30nvZHigMUQf064Z3LnHj1TeEZAKrrPxQk_qccyuEHn2Rs2nCF6D/exec';
+
+let isOnline = false;
+const SYNC_INTERVAL_MS = 8000; // har 8 soniyada boshqa bo'limlardan yangilanishni tekshiradi
+
+const storage = {
+  get: (key) => {
+    try { const val = localStorage.getItem(key); return val ? { value: val } : null; }
+    catch (e) { return null; }
+  },
+  set: (key, value) => {
+    try { localStorage.setItem(key, value); return true; }
+    catch (e) { return false; }
+  },
+  remove: (key) => {
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+};
+
+const MODELS = ['Milano','Elizabetta','Sofia','Baracco','Laura','Sultan','Owen','Onix','Sheikh'];
+const CHAIR_IMAGES = { 'Milano': '', 'Elizabetta': '', 'Sofia': '', 'Baracco': '', 'Laura': '', 'Sultan': '', 'Owen': '', 'Onix': '', 'Sheikh': '' };
+const COLORS = ['kod-013', 'kod-011', 'kod-e8', 'kod-123', 'Shanpan', 'Shanpan q.p', 'Qora rang'];
+
+const USERS = [
+  { login: 'admin', parol: '0641244', bolim: 'admin' },
+  { login: 'zborka', parol: '1123', bolim: 'zborka' },
+  { login: 'shkurka', parol: '1223', bolim: 'shkurka' },
+  { login: 'astarsepish', parol: '12334', bolim: 'astarsepish' },
+  { login: 'astarshkurka', parol: '12344', bolim: 'astarshkurka' },
+  { login: 'lak', parol: '123455', bolim: 'lak' },
+  { login: 'susal', parol: '123455', bolim: 'susal' },
+  { login: 'qoplash', parol: '1234566', bolim: 'qoplash' },
+  { login: 'ombor', parol: '1234566', bolim: 'ombor' },
+];
+
+const STAGE_SEQ = ['zborka','shkurka','astarsepish','astarshkurka','lak','susal','qoplash','ombor'];
+
+const STAGE_LABEL = {
+  uz: {
+    zborka:'Zborka karkas', shkurka:'Shkurka karkas', astarsepish:'Astar sepish karkas',
+    astarshkurka:'Astar shkurka karkas', lak:'Lak karkas', susal:'Susal (lak karkas)',
+    qoplash:'Qoplash', ombor:'Ombor'
+  },
+  kk: {
+    zborka:'Қаңқа жинау', shkurka:'Қаңқа ажарлау', astarsepish:'Қаңқаға астар себу',
+    astarshkurka:'Астарды ажарлау', lak:'Қаңқаны лактау', susal:'Сусаль (лак қаңқа)',
+    qoplash:'Қаптау', ombor:'Қойма'
+  }
+};
+
+const T = {
+  uz: {
+    appname:'Stul Nazorati', tag:'Mebel Seh', kirish:'Kirish', bolim:'Bo\'lim', parol:'Parol',
+    xato:'Login yoki parol noto\'g\'ri', chiqish:'Chiqish', yangiBuyurtma:'Yangi buyurtma',
+    buyurtmalar:'Buyurtmalar va Tahrir', statistika:'Statistika', ombor:'Ombor', navbat:'Navbatdagi ishlar',
+    konverRaqami:'Konver raqami', model:'Stul turi', soni:'Soni (dona)', saqlash:'Saqlash',
+    qabulQildim:'Qabul qildim', tugatdim:'Tugatdim', kutilmoqda:'Kutilmoqda', jarayonda:'Jarayonda',
+    boshBolim:'Boshqaruvchi', hechNarsaYoq:'Hozircha bu bo\'limda ish yo\'q',
+    barchaBuyurtmalar:'Barcha buyurtmalar', jami:'Jami', susalKerakmi:'Susal bosqichidan o\'tadimi?',
+    susalIzoh:'Susal bosqichidan nechta stul o\'tadi?', tasdiqlash:'Tasdiqlash', bekor:'Bekor qilish',
+    zaxira:'Ombordagi zaxira', chiqimQilish:'Chiqim qilish', chiqimTarixi:'Chiqim tarixi',
+    izoh:'Izoh', dona:'dona', sanaDan:'Boshlanish sanasi', sanaGacha:'Tugash sanasi',
+    bolimBoyicha:'Bo\'lim bo\'yicha bajarilgan', jamiTayyor:'Jami ombordagi stullar', omborgaKirim:'Omborga kirim qildim',
+    holatTayyor:'Tayyor', holatJarayonda:'Jarayonda', yopish:'Yopish', konverMavjud:'Bu konver raqami mavjud',
+    toliqTuldiring:'Barcha maydonlarni to\'ldiring', nechtaTugadi:'Nechta stul tugatildi?',
+    filtrBarchasi:'Barchasi', fasonBoyicha:'Fason bo\'yicha bajarilgan', rang:'Rang', rangniTanlang:'Rangni tanlang',
+    susalBolmadi:'Susal bo\'lmadi', umumiyStullar:'Jami bajarilgan stullar soni', qabulVaqti:'Qabul vaqti', tugashVaqti:'Tugash vaqti',
+    buyurtmaVaqti:'Buyurtma sanasi', vaqtHisoboti:'Vaqt hisoboti (Minutlarda)', ortachaVaqt:'O\'rtacha ketgan vaqt',
+    konverReport: 'Konverlar bo\'yicha bajarilgan stullar',
+    ochirish: 'O\'chirish', tahrirlash: 'Tahrirlash', ochirishTasdiq: 'Ushbu buyurtma hamda unga tegishli OMBOR ZAXIRASI va CHIQIM TARIХI ham butunlay o\'chirilsinmi?',
+    orqaga: '← Bosh menyuga qaytish', boshqaruvPaneli: 'Boshqaruv Paneli', selectBolimPlaceholder: '-- Bo\'limni tanlang --'
+  },
+  kk: {
+    appname:'Orynndyq Baqylau', tag:'Mebel Tseh', kirish:'Kiru', bolim:'Bólim', parol:'Parol',
+    xato:'Login nemese parol qate', chiqish:'Shyǵu', yangiBuyurtma:'Jańa tapsyrys',
+    buyurtmalar:'Tapsyrystar men Óńdeý', statistika:'Statistika', ombor:'Qoıma', navbat:'Kezektegi jumystar',
+    konverRaqami:'Konvert bólіmі', model:'Orynndyq túrі', soni:'Sany (dona)', saqlash:'Saqtaý',
+    qabulQildim:'Qabyldadym', tugatdim:'Aıaqtadym', kutilmoqda:'Kútilýde', jarayonda:'Orynndalýda',
+    boshBolim:'Basqarýshy', hechNarsaYoq:'Ázirge bul bólimde jumys joq',
+    barchaBuyurtmalar:'Barlyq tapsyrystar', jami:'Barlyǵy', susalKerakmi:'Susal kezeńinen óte me?',
+    susalIzoh:'Susal kezeńinen neshe orynndyq ótedi?', tasdiqlash:'Rastaý', bekor:'Baskartý',
+    zaxira:'Qoımadaǵy qor', chiqimQilish:'Shyǵys etý', chiqimTarixi:'Shyǵys tarıhy',
+    izoh:'Túsіnіkteme', dona:'dona', sanaDan:'Bastaý kúnі', sanaGacha:'Aıaqtaý kúnі',
+    bolimBoyicha:'Bólіm boıynsha orynndalǵan', jamiTayyor:'Qoımadaǵy barlyq orynndyqtar', omborgaKirim:'Qoımaǵa kiris ettim',
+    holatTayyor:'Daıyn', holatJarayonda:'Orynndalýda', yopish:'Jabý', konverMavjud:'Bul konvert bólіmі bar',
+    toliqTuldiring:'Barlyq óristerdi toltyryńyz', nechtaTugadi:'Neshe orynndyq aıaqtaldy?',
+    filtrBarchasi:'Barlyǵy', fasonBoyicha:'Fason boıynsha orynndalǵan', rang:'Tús', rangniTanlang:'Tústі tańdańyz',
+    susalBolmadi:'Susal bolmady', umumiyStullar:'Orynndalǵan orynndyqtar sany', qabulVaqti:'Qabyldaý ýaqyty', tugashVaqti:'Aıaqtaý ýaqyty',
+    buyurtmaVaqti:'Tapsyrys kúnі', vaqtHisoboti:'Uaqyt eseptemesi (Mınýtpen)', ortachaVaqt:'Órtasha ketken ýaqyt',
+    konverReport: 'Konvertter boıynsha orynndalǵan orynndyqtar',
+    ochirish: 'Jashyru', tahrirlash: 'Óńdeý', ochirishTasdiq: 'Bul tapsyrys pen oǵan tıisti QOIMA QORY jáne SHYǴYS TARIHY múlde joıylsyn ba?',
+    orqaga: '← Bas menyýǵa qaıtu', boshqaruvPaneli: 'Basqarý Paneli', selectBolimPlaceholder: '-- Bólіmdі tańdańyz --'
+  }
+};
+
+let state = {
+  lang: 'uz', user: null, loginErr: false, tab: 'menu',
+  orders: [], tarix: [], ombor: { zaxira: {}, chiqimlar: [] },
+  loaded: false, doneModal: null, colorModal: null, splitModal: null,
+  historyModal: null, editModal: null, dispatchModal: false, statFrom: '', statTo: '',
+  selectedDeptFilter: 'zborka', selectedColor: 'kod-013',
+  showFasonStat: false, showKonverStat: true
+};
+
+function L() { return T[state.lang] || T.uz; }
+function getStageLabel(key) {
+  const dict = STAGE_LABEL[state.lang] || STAGE_LABEL.uz;
+  return dict[key] || key;
+}
+
+// GOOGLE SHEETS BILAN DATA ALMASHINUVI
+async function syncFromSheets() {
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=getAll');
+    const data = await res.json();
+    if (data && data.ok) {
+      state.orders = data.orders ? JSON.parse(data.orders) : [];
+      state.tarix = data.tarix ? JSON.parse(data.tarix) : [];
+      state.ombor = data.ombor ? JSON.parse(data.ombor) : { zaxira: {}, chiqimlar: [] };
+      if (!state.ombor.chiqimlar) state.ombor.chiqimlar = [];
+      if (!state.ombor.zaxira) state.ombor.zaxira = {};
+      saveLocalOrders(); saveLocalTarix(); saveLocalOmbor();
+      isOnline = true;
+    } else {
+      isOnline = false;
+    }
+  } catch (e) {
+    isOnline = false;
+    console.error('Sheets bilan sinxronlashda xato:', e);
+  }
+  render();
+}
+
+function startSheetsPolling() {
+  syncFromSheets();
+  setInterval(syncFromSheets, SYNC_INTERVAL_MS);
+}
+
+async function pushToSheets(key, valueObj) {
+  try {
+    await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // CORS preflightdan qochish uchun
+      body: JSON.stringify({ action: 'set', key, value: JSON.stringify(valueObj) })
+    });
+    isOnline = true;
+  } catch (e) {
+    isOnline = false;
+    console.error('Sheetsga yozishda xato:', e);
+  }
+}
+
+function loadData() {
+  const savedLang = storage.get('app_lang');
+  if (savedLang) state.lang = savedLang.value;
+
+  const o = storage.get('buyurtmalar'); state.orders = o ? JSON.parse(o.value) : [];
+  const t = storage.get('tarix'); state.tarix = t ? JSON.parse(t.value) : [];
+  const om = storage.get('ombor'); state.ombor = om ? JSON.parse(om.value) : { zaxira: {}, chiqimlar: [] };
+  if(!state.ombor.chiqimlar) state.ombor.chiqimlar = [];
+  
+  const savedUser = storage.get('app_user');
+  if (savedUser) state.user = JSON.parse(savedUser.value);
+  
+  const savedTab = storage.get('app_tab');
+  if (savedTab) state.tab = savedTab.value;
+  else state.tab = (state.user && state.user.bolim === 'admin') ? 'menu' : 'ish';
+
+  state.loaded = true;
+  startSheetsPolling();
+  render();
+}
+
+function changeLanguage(lang) {
+  state.lang = lang;
+  storage.set('app_lang', lang);
+  render();
+}
+
+function saveLocalOrders() { storage.set('buyurtmalar', JSON.stringify(state.orders)); }
+function saveLocalTarix() { storage.set('tarix', JSON.stringify(state.tarix)); }
+function saveLocalOmbor() { storage.set('ombor', JSON.stringify(state.ombor)); }
+
+function saveOrders() {
+  saveLocalOrders();
+  pushToSheets('orders', state.orders);
+}
+
+function saveTarix() {
+  saveLocalTarix();
+  pushToSheets('tarix', state.tarix);
+}
+
+function saveOmbor() {
+  saveLocalOmbor();
+  pushToSheets('ombor', state.ombor);
+}
+
+function log(bolim, amal, konver, model, soni, izoh, rang) {
+  state.tarix.push({ vaqt: new Date().toISOString(), bolim, amal, konver, model, soni: soni || 0, izoh: izoh || '', rang: rang || '' });
+  saveTarix();
+}
+
+function switchTab(tabName) {
+  state.tab = tabName;
+  storage.set('app_tab', tabName);
+  render();
+}
+
+function nextStage(cur) { 
+  const idx = STAGE_SEQ.indexOf(cur); 
+  return STAGE_SEQ[idx + 1]; 
+}
+
+function findOrder(id) { return state.orders.find(o => o.id === id); }
+function recomputeHolat(order) { order.holat = order.partiyalar.every(p => p.holat === 'tugadi') ? 'tayyor' : 'jarayonda'; }
+function esc(s) { return (s + '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function formatDate(isoStr) {
+  if (!isoStr) return '-';
+  const d = new Date(isoStr);
+  return `${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0,5)}`;
+}
+
+function formatTimeOnly(isoStr) {
+  if (!isoStr) return '-';
+  const d = new Date(isoStr);
+  return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} (${d.getDate()}/${d.getMonth()+1})`;
+}
+
+function calcDurationMinutes(startIso, endIso) {
+  if (!startIso || !endIso) return 0;
+  const diff = new Date(endIso) - new Date(startIso);
+  return Math.max(0, Math.round(diff / (1000 * 60)));
+}
+
+function createOrder(konver, model, soni) {
+  konver = konver.trim();
+  if (!konver || !model || !soni || soni <= 0) { alert(L().toliqTuldiring); return false; }
+  if (findOrder(konver)) { alert(L().konverMavjud); return false; }
+  
+  const now = new Date().toISOString();
+  const BoshlangichBosqich = (model.toLowerCase() === 'owen') ? 'shkurka' : 'zborka';
+
+  state.orders.push({
+    id: konver, model, jamiSoni: soni, sana: now, holat: 'jarayonda',
+    partiyalar: [{ 
+      pid: konver + '-' + Date.now(), 
+      soni, 
+      tugatilganSoni: 0, 
+      bosqich: BoshlangichBosqich, 
+      susal: false, 
+      holat: 'kutilmoqda', 
+      rang: null, 
+      qabulVaqti: null, 
+      tugashVaqti: null 
+    }]
+  });
+  
+  saveOrders();
+  log('admin', 'yaratdi', konver, model, soni, `Boshlang'ich: ${BoshlangichBosqich}`);
+  return true;
+}
+
+function deleteOrder(konverId) {
+  if (!confirm(L().ochirishTasdiq)) return;
+
+  const o = findOrder(konverId);
+  if (o) {
+    o.partiyalar.forEach(p => {
+      if (p.bosqich === 'ombor' && p.holat === 'tugadi') {
+        const key = p.rang ? `${o.model}-${p.rang}` : o.model;
+        if (state.ombor.zaxira[key]) {
+          state.ombor.zaxira[key] -= p.soni;
+          if (state.ombor.zaxira[key] <= 0) {
+            delete state.ombor.zaxira[key];
+          }
+        }
+      }
+    });
+
+    if (state.ombor.chiqimlar && state.ombor.chiqimlar.length > 0) {
+      let remainingToDelete = Number(o.jamiSoni || 0);
+
+      for (let i = 0; i < state.ombor.chiqimlar.length; i++) {
+        if (remainingToDelete <= 0) break;
+
+        let chiqim = state.ombor.chiqimlar[i];
+
+        if (chiqim.modelKey && chiqim.modelKey.startsWith(o.model)) {
+          let chiqimSoni = Number(chiqim.soni || 0);
+
+          if (chiqimSoni <= remainingToDelete) {
+            remainingToDelete -= chiqimSoni;
+            state.ombor.chiqimlar.splice(i, 1);
+            i--;
+          } else {
+            chiqim.soni = chiqimSoni - remainingToDelete;
+            remainingToDelete = 0;
+          }
+        }
+      }
+    }
+
+    saveOmbor();
+  }
+
+  state.orders = state.orders.filter(item => item.id !== konverId);
+  state.tarix = state.tarix.filter(item => item.konver !== konverId);
+  
+  saveOrders();
+  saveTarix();
+
+  log('admin', 'o\'chirdi', konverId, o ? o.model : '', 0, 'Buyurtma va ombor tarixi tozalandi');
+  render();
+}
+
+function editOrder(oldKonver, newKonver, newModel, newSoni) {
+  newKonver = newKonver.trim();
+  if (!newKonver || !newModel || !newSoni || newSoni <= 0) { alert(L().toliqTuldiring); return; }
+  
+  if (oldKonver !== newKonver && findOrder(newKonver)) {
+    alert(L().konverMavjud); return;
+  }
+
+  const o = findOrder(oldKonver);
+  if (!o) return;
+
+  o.id = newKonver;
+  o.model = newModel;
+  o.jamiSoni = newSoni;
+  
+  o.partiyalar.forEach(p => {
+    p.pid = p.pid.replace(oldKonver, newKonver);
+  });
+
+  if (state.ombor.chiqimlar) {
+    state.ombor.chiqimlar.forEach(c => {
+      if (c.konver === oldKonver) c.konver = newKonver;
+    });
+    saveOmbor();
+  }
+
+  saveOrders();
+  log('admin', 'tahrirladi', newKonver, newModel, newSoni, `Eski konver: ${oldKonver}`);
+  state.editModal = null;
+  render();
+}
+
+function acceptPartiya(konverId, pid) {
+  const o = findOrder(konverId); if (!o) return;
+  const p = o.partiyalar.find(x => x.pid === pid); if (!p) return;
+  p.holat = 'jarayonda';
+  p.qabulVaqti = new Date().toISOString();
+  saveOrders();
+  log(p.bosqich, 'qabul qildi', konverId, o.model, p.soni, '');
+  render();
+}
+
+function openDoneModal(konverId, pid) {
+  const o = findOrder(konverId); if (!o) return;
+  const p = o.partiyalar.find(x => x.pid === pid); if (!p) return;
+  state.doneModal = { konverId, pid, max: p.soni };
+  render();
+}
+
+function confirmDone(rawVal) {
+  const { konverId, pid, max } = state.doneModal;
+  const o = findOrder(konverId);
+  const p = o.partiyalar.find(x => x.pid === pid);
+  let qty = parseInt(rawVal);
+  if (isNaN(qty) || qty <= 0) { state.doneModal = null; render(); return; }
+  qty = Math.min(max, qty);
+
+  state.doneModal = null;
+  const now = new Date().toISOString();
+  const curBolim = p.bosqich;
+
+  if (p.bosqich === 'lak') {
+    state.colorModal = { konverId, doneQty: qty, parentPid: pid, pRef: p, isFull: (qty === max) };
+    render();
+    return;
+  }
+
+  p.soni = qty;
+  p.tugashVaqti = now;
+  p.holat = 'tugadi';
+
+  log(curBolim, 'tugatdi', konverId, o.model, qty, '');
+
+  if (p.bosqich === 'ombor') {
+    const key = p.rang ? `${o.model}-${p.rang}` : o.model;
+    state.ombor.zaxira[key] = (state.ombor.zaxira[key] || 0) + qty;
+    saveOmbor();
+  } else {
+    const nxt = nextStage(p.bosqich);
+    o.partiyalar.push({
+      pid: konverId + '-' + Date.now(),
+      soni: qty,
+      tugatilganSoni: 0,
+      bosqich: nxt,
+      susal: p.susal,
+      holat: 'kutilmoqda',
+      rang: p.rang || null,
+      qabulVaqti: null,
+      tugashVaqti: null
+    });
+  }
+
+  if (qty < max) {
+    o.partiyalar.push({
+      pid: konverId + '-' + (Date.now() + 1),
+      soni: max - qty,
+      tugatilganSoni: 0,
+      bosqich: p.bosqich,
+      susal: p.susal,
+      holat: 'jarayonda',
+      rang: p.rang || null,
+      qabulVaqti: p.qabulVaqti,
+      tugashVaqti: null
+    });
+  }
+
+  recomputeHolat(o);
+  saveOrders();
+  render();
+}
+
+function confirmColor(colorName) {
+  const { konverId, doneQty, pRef, isFull } = state.colorModal;
+  state.colorModal = null;
+  state.splitModal = { konverId, doneQty, colorName, pRef, isFull };
+  render();
+}
+
+function confirmSplit(susalRaw) {
+  const { konverId, doneQty, colorName, pRef, isFull } = state.splitModal;
+  const o = findOrder(konverId);
+  let susalSoni = parseInt(susalRaw) || 0;
+  susalSoni = Math.max(0, Math.min(doneQty, susalSoni));
+  const oddiySoni = doneQty - susalSoni;
+  const now = new Date().toISOString();
+
+  pRef.soni = doneQty;
+  pRef.tugashVaqti = now;
+  pRef.holat = 'tugadi';
+  pRef.rang = colorName;
+
+  if (susalSoni > 0) {
+    o.partiyalar.push({
+      pid: konverId + '-' + Date.now() + '-s', 
+      soni: susalSoni, 
+      tugatilganSoni: 0,
+      bosqich: 'susal', 
+      susal: true, 
+      holat: 'kutilmoqda', 
+      rang: colorName, 
+      qabulVaqti: null, 
+      tugashVaqti: null
+    });
+  }
+
+  if (oddiySoni > 0) {
+    o.partiyalar.push({
+      pid: konverId + '-' + Date.now() + '-q', 
+      soni: oddiySoni, 
+      tugatilganSoni: 0,
+      bosqich: 'qoplash', 
+      susal: false, 
+      holat: 'kutilmoqda', 
+      rang: colorName, 
+      qabulVaqti: null, 
+      tugashVaqti: null
+    });
+  }
+
+  log('lak', 'tugatdi (rang/susal)', konverId, o.model, doneQty, `Rang: ${colorName}, Susal: ${susalSoni}`);
+  recomputeHolat(o);
+  saveOrders();
+  state.splitModal = null;
+  render();
+}
+
+function skipSusal() { confirmSplit(0); }
+
+function dispatchStock(key, selectedKonver, soni, izoh) {
+  soni = parseInt(soni) || 0; if (soni <= 0) return;
+  const current = state.ombor.zaxira[key] || 0;
+  if (soni > current) { alert('Omborda yetarli zaxira yo\'q!'); return; }
+  
+  state.ombor.zaxira[key] = current - soni;
+  
+  if (!state.ombor.chiqimlar) state.ombor.chiqimlar = [];
+  
+  state.ombor.chiqimlar.push({
+    vaqt: new Date().toISOString(),
+    konver: selectedKonver || '-',
+    modelKey: key,
+    soni,
+    izoh
+  });
+
+  saveOmbor();
+  log('ombor', 'chiqim qildi', selectedKonver || '-', key, soni, izoh);
+  state.dispatchModal = false;
+  render();
+}
+
+// EXCEL YUKLASH FUNKSIYASI (SheetJS orqali)
+function exportToExcel() {
+  const isAdmin = state.user.bolim === 'admin';
+  const targetDept = isAdmin ? state.selectedDeptFilter : state.user.bolim;
+
+  const data = [];
+  const fromDate = state.statFrom ? new Date(state.statFrom + 'T00:00:00') : null;
+  const toDate = state.statTo ? new Date(state.statTo + 'T23:59:59') : null;
+
+  state.orders.forEach(o => {
+    o.partiyalar.forEach(p => {
+      if (p.bosqich === targetDept) {
+        if (p.tugashVaqti) {
+          const tDate = new Date(p.tugashVaqti);
+          if (fromDate && tDate < fromDate) return;
+          if (toDate && tDate > toDate) return;
+        }
+
+        data.push({
+          "Konver ID": o.id,
+          "Mahsulot Nomi": o.model,
+          "Soni (dona)": p.soni,
+          "Bosqich": getStageLabel(p.bosqich),
+          "Rang": p.rang || '-',
+          "Susal": p.susal ? 'Ha' : 'Yo\'q',
+          "Holati": p.holat,
+          "Qabul vaqti": formatDate(p.qabulVaqti),
+          "Tugash vaqti": formatDate(p.tugashVaqti)
+        });
+      }
+    });
+  });
+
+  if (data.length === 0) {
+    alert("Yuklash uchun ma'lumot topilmadi!");
+    return;
+  }
+
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Hisobot");
+  XLSX.writeFile(wb, `Hisobot_${targetDept}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function badge(holat) {
+  const l = L();
+  if (holat === 'kutilmoqda') return `<span class="badge wait">⏳ ${l.kutilmoqda}</span>`;
+  if (holat === 'jarayonda') return `<span class="badge progress">⚙️ ${l.jarayonda}</span>`;
+  return `<span class="badge done">✅ ${l.holatTayyor}</span>`;
+}
+
+function colorBadge(color) {
+  if (!color) return '';
+  return `<span class="badge color-tag">🎨 ${color}</span>`;
+}
+
+function ticketCard(order, partiya, showActions) {
+  const l = L();
+  const stageLbl = getStageLabel(partiya.bosqich);
+  let actionsHtml = '';
+  if (showActions) {
+    if (partiya.holat === 'kutilmoqda') {
+      actionsHtml = `<div class="actions"><button class="primary" onclick="acceptPartiya('${order.id}','${partiya.pid}')">${l.qabulQildim}</button></div>`;
+    } else if (partiya.holat === 'jarayonda') {
+      const label = partiya.bosqich === 'ombor' ? l.omborgaKirim : l.tugatdim;
+      actionsHtml = `<div class="actions"><button class="secondary" onclick="openDoneModal('${order.id}','${partiya.pid}')">${label}</button></div>`;
+    }
+  }
+  const susalTag = partiya.susal ? `<span class="badge susal">✨ Susal</span>` : '';
+  const colorTag = partiya.rang ? colorBadge(partiya.rang) : '';
+  const imgUrl = CHAIR_IMAGES[order.model];
+  const imgHtml = imgUrl ? `<img src="${imgUrl}" class="chair-img" alt="">` : `<div class="chair-img" style="display:flex;align-items:center;justify-content:center;font-size:20px;">🪑</div>`;
+
+  const timeInfo = `
+    <div class="time-text">
+      ${partiya.qabulVaqti ? `<b>${l.qabulVaqti}:</b> ${formatDate(partiya.qabulVaqti)}` : ''} 
+      ${partiya.tugashVaqti ? ` | <b>${l.tugashVaqti}:</b> ${formatDate(partiya.tugashVaqti)}` : ''}
+    </div>
+  `;
+
+  return `
+  <div class="card ticket">
+    <div class="stub">${esc(order.id)}</div>
+    ${imgHtml}
+    <div class="body">
+      <div class="row-between">
+        <div class="model">${esc(order.model)}</div>
+        ${badge(partiya.holat)}
+      </div>
+      <div class="meta">
+        <span><b>${partiya.soni}</b> ${l.dona}</span> &middot; <span><b>${stageLbl}</b></span>
+        ${susalTag} ${colorTag}
+      </div>
+      ${timeInfo}
+      ${actionsHtml}
+    </div>
+  </div>`;
+}
+
+function renderLogin() {
+  const l = L();
+  return `
+  <div class="login-screen">
+    <div class="login-card">
+      <div class="stamp">🪑 ABchairs</div>
+      <p style="color:var(--ink-soft);font-size:12px;margin-top:0;margin-bottom:24px;text-align:center;font-weight:600;letter-spacing:0.5px;">Zelta premium</p>
+      
+      <label class="field-label">${l.bolim}</label>
+      <select id="loginBolim">
+        <option value="" disabled selected>${l.selectBolimPlaceholder}</option>
+        ${USERS.map(u => `<option value="${u.login}">${u.login === 'admin' ? l.boshBolim : getStageLabel(u.bolim)}</option>`).join('')}
+      </select>
+
+      <label class="field-label">${l.parol}</label>
+      <input type="password" id="loginParol" placeholder="••••" onkeydown="if(event.key==='Enter') doLogin()">
+      ${state.loginErr ? `<div class="err">${l.xato}</div>` : ''}
+      <button class="primary" style="width:100%;margin-top:8px;padding:12px;" onclick="doLogin()">${l.kirish}</button>
+    </div>
+  </div>`;
+}
+
+function doLogin() {
+  const login = document.getElementById('loginBolim').value;
+  const parol = document.getElementById('loginParol').value;
+  
+  if (!login) {
+    state.loginErr = true;
+    render();
+    return;
+  }
+
+  const u = USERS.find(x => x.login === login && x.parol === parol);
+  if (!u) { state.loginErr = true; render(); return; }
+  
+  state.user = u; 
+  state.loginErr = false;
+  storage.set('app_user', JSON.stringify(u));
+  
+  const initialTab = u.bolim === 'admin' ? 'menu' : (u.bolim === 'ombor' ? 'ombor' : 'ish');
+  switchTab(initialTab);
+}
+
+function doLogout() {
+  state.user = null;
+  storage.remove('app_user');
+  storage.remove('app_tab');
+  render();
+}
+
+function renderTopbar() {
+  const l = L();
+  const netBadge = isOnline 
+    ? `<span class="net-status online">🟢 Online</span>` 
+    : `<span class="net-status offline">🟡 Offline (Ulanish yo'q)</span>`;
+
+  return `
+  <header class="topbar">
+    <div class="brand">🪑 ${l.appname} <span class="tag">${l.tag}</span></div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      ${netBadge}
+      <div class="langsw">
+        <button class="${state.lang === 'uz' ? 'active' : ''}" onclick="changeLanguage('uz')">UZ</button>
+        <button class="${state.lang === 'kk' ? 'active' : ''}" onclick="changeLanguage('kk')">KK</button>
+      </div>
+    </div>
+  </header>`;
+}
+
+function renderUserbar() {
+  const l = L();
+  const nomi = state.user.bolim === 'admin' ? l.boshBolim : getStageLabel(state.user.bolim);
+  return `
+  <div class="userbar">
+    <div><span class="user-avatar">${nomi.charAt(0)}</span><b>${nomi}</b></div>
+    <button class="logout" onclick="doLogout()">${l.chiqish}</button>
+  </div>`;
+}
+
+function renderAdminMenu() {
+  const l = L();
+  return `
+  <h2 class="section-title">📌 ${l.boshqaruvPaneli}</h2>
+  <div class="admin-grid-menu">
+    <div class="menu-card" onclick="switchTab('ish')">
+      <div class="icon">⚡</div>
+      <div class="title">Jarayondagi Ishlar</div>
+      <div class="sub">Hamma sexlardagi holat</div>
+    </div>
+    <div class="menu-card" onclick="switchTab('yangi')">
+      <div class="icon">➕</div>
+      <div class="title">${l.yangiBuyurtma}</div>
+      <div class="sub">Yangi zakaz kiritish</div>
+    </div>
+    <div class="menu-card" onclick="switchTab('buyurtmalar')">
+      <div class="icon">📝</div>
+      <div class="title">${l.buyurtmalar}</div>
+      <div class="sub">Tahrirlash va o'chirish</div>
+    </div>
+    <div class="menu-card" onclick="switchTab('statistika')">
+      <div class="icon">📊</div>
+      <div class="title">${l.statistika}</div>
+      <div class="sub">Xisobotlar va raqamlar</div>
+    </div>
+    <div class="menu-card" onclick="switchTab('vaqt')">
+      <div class="icon">⏱️</div>
+      <div class="title">${l.vaqtHisoboti}</div>
+      <div class="sub">O'rtacha minutlar</div>
+    </div>
+    <div class="menu-card" onclick="switchTab('chiqimlar')">
+      <div class="icon">🚚</div>
+      <div class="title">${l.chiqimTarixi}</div>
+      <div class="sub">Ombor chiqimlar tarixi</div>
+    </div>
+  </div>`;
+}
+
+function renderBackButton() {
+  const l = L();
+  if (state.user && state.user.bolim === 'admin' && state.tab !== 'menu') {
+    return `<div class="back-btn" onclick="switchTab('menu')">${l.orqaga}</div>`;
+  }
+  return '';
+}
+
+function renderDeptDashboard() {
+  const l = L(); const bolim = state.user.bolim; const items = [];
+  const isAdmin = bolim === 'admin';
+
+  state.orders.forEach(o => {
+    o.partiyalar.forEach(p => {
+      if (isAdmin) {
+        if (p.holat !== 'tugadi') items.push({ o, p });
+      } else {
+        if (p.bosqich === bolim && p.holat !== 'tugadi') items.push({ o, p });
+      }
+    });
+  });
+
+  items.sort((a, b) => (a.p.holat === 'jarayonda' ? 0 : 1) - (b.p.holat === 'jarayonda' ? 0 : 1));
+
+  return `
+  ${renderBackButton()}
+  <h2 class="section-title">${isAdmin ? '⚡ Jarayondagi ishlar nazorati' : l.navbat}</h2>
+  ${items.length === 0 ? `<div class="empty">✅ ${l.hechNarsaYoq}</div>` : items.map(x => ticketCard(x.o, x.p, !isAdmin)).join('')}
+  `;
+}
+
+function renderOmborDashboard() {
+  const l = L(); const incoming = [];
+  state.orders.forEach(o => {
+    o.partiyalar.forEach(p => { if (p.bosqich === 'ombor' && p.holat !== 'tugadi') incoming.push({ o, p }); });
+  });
+
+  const zaxiraRows = Object.keys(state.ombor.zaxira)
+    .filter(key => state.ombor.zaxira[key] > 0)
+    .map(key => {
+      const parts = key.split('-'); const model = parts[0]; const color = parts.slice(1).join('-');
+      const count = state.ombor.zaxira[key];
+      return `<div class="list-row"><span><b>${model}</b> ${color ? colorBadge(color) : ''}</span><span class="mono"><b>${count}</b> ${l.dona}</span></div>`;
+    }).join('') || `<div class="empty">📦 ${l.hechNarsaYoq}</div>`;
+
+  return `
+  <h2 class="section-title">${l.navbat}</h2>
+  ${incoming.length === 0 ? `<div class="empty">📦 ${l.hechNarsaYoq}</div>` : incoming.map(x => ticketCard(x.o, x.p, true)).join('')}
+  <h2 class="section-title">${l.zaxira}</h2>
+  <div class="card scrollable-card">${zaxiraRows}</div>
+  <button class="primary" style="width:100%;margin-bottom:14px;" onclick="state.dispatchModal=true;render();">${l.chiqimQilish}</button>
+  `;
+}
+
+function renderChiqimlar() {
+  const l = L();
+  const list = state.ombor.chiqimlar || [];
+
+  const rows = list.length === 0 ? `<div class="empty">📦 Hali chiqim qilinmagan</div>` :
+  list.slice().reverse().map(c => `
+    <div class="card">
+      <div class="row-between">
+        <div>
+          <b>${esc(c.modelKey)}</b>
+          <div style="font-size:11px;color:var(--primary);font-weight:700;">Konver: ${esc(c.konver || '-')}</div>
+        </div>
+        <span class="badge done" style="background:#FEE2E2;color:#DC2626;">-${c.soni} ${l.dona}</span>
+      </div>
+      <div class="time-text" style="margin-top:6px;">📅 ${formatDate(c.vaqt)}</div>
+      ${c.izoh ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:4px;">📝 ${esc(c.izoh)}</div>` : ''}
+    </div>
+  `).join('');
+
+  return `${renderBackButton()}<h2 class="section-title">🚚 ${l.chiqimTarixi}</h2>${rows}`;
+}
+
+function renderYangiBuyurtma() {
+  const l = L();
+  return `
+  ${renderBackButton()}
+  <h2 class="section-title">➕ ${l.yangiBuyurtma}</h2>
+  <div class="card">
+    <label class="field-label">${l.konverRaqami}</label>
+    <input id="fKonver" placeholder="Masalan: K-101">
+    <label class="field-label">${l.model}</label>
+    <select id="fModel">${MODELS.map(m => `<option value="${m}">${m}</option>`).join('')}</select>
+    <label class="field-label">${l.soni}</label>
+    <input id="fSoni" type="number" min="1" placeholder="12">
+    <button class="primary" style="width:100%" onclick="submitNewOrder()">${l.saqlash}</button>
+  </div>`;
+}
+
+function submitNewOrder() {
+  const k = document.getElementById('fKonver').value;
+  const m = document.getElementById('fModel').value;
+  const s = parseInt(document.getElementById('fSoni').value);
+  if (createOrder(k, m, s)) { switchTab('buyurtmalar'); }
+}
+
+function renderBuyurtmalar() {
+  const l = L();
+  if (state.orders.length === 0) return `${renderBackButton()}<div class="empty">📋 ${l.hechNarsaYoq}</div>`;
+  
+  const isAdmin = state.user.bolim === 'admin';
+
+  return `
+  ${renderBackButton()}
+  <h2 class="section-title">📝 ${l.buyurtmalar}</h2>
+  ${state.orders.slice().reverse().map(o => {
+    const stages = o.partiyalar.map(p => `${getStageLabel(p.bosqich)} (${p.soni}${p.rang ? ' - ' + p.rang : ''})`).join(', ');
+    return `
+    <div class="card">
+      <div class="ticket" style="cursor:pointer" onclick="state.historyModal='${o.id}';render();">
+        <div class="stub">${esc(o.id)}</div>
+        <div class="body">
+          <div class="row-between">
+            <div class="model">🪑 ${esc(o.model)} &middot; ${o.jamiSoni} ${l.dona}</div>
+            ${o.holat === 'tayyor' ? `<span class="badge done">${l.holatTayyor}</span>` : `<span class="badge progress">${l.holatJarayonda}</span>`}
+          </div>
+          <div class="time-text" style="margin-top:4px;"><b>${l.buyurtmaVaqti}:</b> ${formatDate(o.sana)}</div>
+          <div class="meta" style="margin-top:4px;">${stages}</div>
+        </div>
+      </div>
+      ${isAdmin ? `
+      <div style="display:flex; gap:8px; margin-top:12px; border-top:1px dashed var(--line); padding-top:10px; justify-content:flex-end;">
+        <button class="edit-btn" onclick="openEditModal('${o.id}')">✏️ ${l.tahrirlash}</button>
+        <button class="danger-btn" onclick="deleteOrder('${o.id}')">🗑️ ${l.ochirish}</button>
+      </div>` : ''}
+    </div>`;
+  }).join('')}`;
+}
+
+function openEditModal(konverId) {
+  const o = findOrder(konverId);
+  if (!o) return;
+  state.editModal = { konverId: o.id, model: o.model, jamiSoni: o.jamiSoni };
+  render();
+}
+
+function renderEditModal() {
+  if (!state.editModal) return '';
+  const l = L();
+  const { konverId, model, jamiSoni } = state.editModal;
+
+  return `
+  <div class="modal-overlay">
+    <div class="modal">
+      <h3>✏️ Buyurtmani Tahrirlash</h3>
+      <p>Konver: <b>${konverId}</b></p>
+      
+      <label class="field-label">${l.konverRaqami}</label>
+      <input id="editKonver" value="${esc(konverId)}">
+      
+      <label class="field-label">${l.model}</label>
+      <select id="editModel">
+        ${MODELS.map(m => `<option value="${m}" ${m===model?'selected':''}>${m}</option>`).join('')}
+      </select>
+      
+      <label class="field-label">${l.soni}</label>
+      <input id="editSoni" type="number" min="1" value="${jamiSoni}">
+
+      <div class="modal-actions">
+        <button class="secondary" onclick="state.editModal=null;render();">${l.bekor}</button>
+        <button class="primary" onclick="editOrder('${konverId}', document.getElementById('editKonver').value, document.getElementById('editModel').value, parseInt(document.getElementById('editSoni').value))">${l.saqlash}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderStatistika() {
+  const l = L();
+  const isAdmin = state.user.bolim === 'admin';
+  const isOmbor = state.user.bolim === 'ombor';
+  const targetDept = isAdmin ? state.selectedDeptFilter : state.user.bolim;
+  
+  let totalDoneSum = 0;
+  let totalInProcessSum = 0;
+  const perModelDone = {};
+  const konverRows = [];
+
+  const fromDate = state.statFrom ? new Date(state.statFrom + 'T00:00:00') : null;
+  const toDate = state.statTo ? new Date(state.statTo + 'T23:59:59') : null;
+
+  state.orders.forEach(o => {
+    o.partiyalar.forEach(p => {
+      const pBolim = p.bosqich;
+      const isMatchDept = (pBolim === targetDept);
+
+      if (isMatchDept) {
+        if (p.tugashVaqti) {
+          const tDate = new Date(p.tugashVaqti);
+          if (fromDate && tDate < fromDate) return;
+          if (toDate && tDate > toDate) return;
+        }
+
+        if (p.holat === 'tugadi') {
+          totalDoneSum += p.soni;
+          perModelDone[o.model] = (perModelDone[o.model] || 0) + p.soni;
+
+          konverRows.push({
+            konver: o.id, model: o.model, soni: p.soni,
+            boshlangan: p.qabulVaqti, tugatilgan: p.tugashVaqti, holat: 'tugadi'
+          });
+        } else {
+          totalInProcessSum += p.soni;
+          konverRows.push({
+            konver: o.id, model: o.model, soni: p.soni,
+            boshlangan: p.qabulVaqti, tugatilgan: null, holat: p.holat
+          });
+        }
+      }
+    });
+  });
+
+  const doneRows = Object.keys(perModelDone).map(m =>
+    `<div class="list-row"><span><b>${m}</b></span><span class="mono"><b>${perModelDone[m]}</b> ${l.dona}</span></div>`
+  ).join('') || `<div class="empty">${l.hechNarsaYoq}</div>`;
+
+  const konverTableRows = konverRows.map(k => `
+    <tr>
+      <td><b>${esc(k.konver)}</b><br><span style="color:var(--ink-soft);font-size:11px;">${esc(k.model)}</span></td>
+      <td><b>${k.soni}</b> ${l.dona}</td>
+      <td>${badge(k.holat)}</td>
+      <td>${formatTimeOnly(k.tugatilgan || k.boshlangan)}</td>
+    </tr>
+  `).join('');
+
+  const konverTableHtml = konverRows.length > 0 ? `
+    <div style="max-height: 250px; overflow-y: auto;">
+      <table class="clean-table">
+        <thead>
+          <tr>
+            <th>Konver</th><th>Soni</th><th>Holati</th><th>Vaqt</th>
+          </tr>
+        </thead>
+        <tbody>${konverTableRows}</tbody>
+      </table>
+    </div>
+  ` : `<div class="empty">${l.hechNarsaYoq}</div>`;
+
+  let omborRealCount = 0;
+  Object.keys(state.ombor.zaxira).forEach(k => { omborRealCount += (state.ombor.zaxira[k] || 0); });
+
+  let jamiChiqimSoni = 0;
+  if (state.ombor.chiqimlar && Array.isArray(state.ombor.chiqimlar)) {
+    jamiChiqimSoni = state.ombor.chiqimlar.reduce((acc, item) => acc + (parseInt(item.soni) || 0), 0);
+  }
+
+  const deptTitle = getStageLabel(targetDept);
+
+  return `
+  ${renderBackButton()}
+  
+  <button class="excel-btn" onclick="exportToExcel()">
+    📥 Hisobotni Excelda yuklash (.xlsx)
+  </button>
+
+  <h2 class="section-title">📊 ${l.statistika} - ${deptTitle}</h2>
+  
+  ${isAdmin ? `
+  <label class="field-label">Bo'limni tanlang:</label>
+  <select onchange="state.selectedDeptFilter=this.value;render();" style="margin-bottom:12px;">
+    ${STAGE_SEQ.map(s => `<option value="${s}" ${state.selectedDeptFilter===s?'selected':''}>${getStageLabel(s)}</option>`).join('')}
+  </select>
+  ` : ''}
+
+  <div class="filter-box">
+    <div>
+      <label class="field-label">${l.sanaDan}</label>
+      <input type="date" value="${state.statFrom}" onchange="state.statFrom=this.value;render();">
+    </div>
+    <div>
+      <label class="field-label">${l.sanaGacha}</label>
+      <input type="date" value="${state.statTo}" onchange="state.statTo=this.value;render();">
+    </div>
+  </div>
+
+  <h2 class="section-title collapsible-header ${state.showFasonStat ? 'open' : ''}" onclick="state.showFasonStat=!state.showFasonStat;render();">
+    <span>${l.fasonBoyicha} (Bajarilgan)</span>
+    <span class="arrow">▼</span>
+  </h2>
+  ${state.showFasonStat ? `<div class="card scrollable-card">${doneRows}</div>` : ''}
+
+  <h2 class="section-title collapsible-header ${state.showKonverStat ? 'open' : ''}" onclick="state.showKonverStat=!state.showKonverStat;render();">
+    <span>📋 ${l.konverReport}</span>
+    <span class="arrow">▼</span>
+  </h2>
+  ${state.showKonverStat ? `<div class="card" style="padding:12px;">${konverTableHtml}</div>` : ''}
+  
+  <div class="total-summary">
+    <span class="label">Jami tugallangan:</span>
+    <span class="number">${totalDoneSum} ${l.dona}</span>
+  </div>
+
+  <div class="total-summary" style="background:#FEF3C7;border-color:#F59E0B;">
+    <span class="label" style="color:#B45309;">Hozirda jarayonda / kutilmoqda:</span>
+    <span class="number" style="color:#B45309;">${totalInProcessSum} ${l.dona}</span>
+  </div>
+
+  ${(isAdmin || isOmbor) ? `
+  <div class="total-summary" style="background:#D1FAE5;border-color:#10B981;margin-top:12px;">
+    <span class="label" style="color:#065F46;">📦 Hozir omborda bor tayyor stullar:</span>
+    <span class="number" style="color:#065F46;">${omborRealCount} ${l.dona}</span>
+  </div>
+  <div class="total-summary" style="background:#FEE2E2;border-color:#EF4444;">
+    <span class="label" style="color:#991B1B;">🚚 Ombordan chiqim bo'lgan jami stullar:</span>
+    <span class="number" style="color:#991B1B;">${jamiChiqimSoni} ${l.dona}</span>
+  </div>
+  ` : ''}
+  `;
+}
+
+function renderVaqtHisoboti() {
+  const l = L();
+  const fasonVaqtlari = {};
+
+  state.orders.forEach(o => {
+    let firstStart = null;
+    let lastEnd = null;
+
+    o.partiyalar.forEach(p => {
+      if (p.qabulVaqti && (!firstStart || new Date(p.qabulVaqti) < new Date(firstStart))) {
+        firstStart = p.qabulVaqti;
+      }
+      if (p.tugashVaqti && (!lastEnd || new Date(p.tugashVaqti) > new Date(lastEnd))) {
+        lastEnd = p.tugashVaqti;
+      }
+    });
+
+    if (firstStart && lastEnd) {
+      const minutes = calcDurationMinutes(firstStart, lastEnd);
+      if (!fasonVaqtlari[o.model]) fasonVaqtlari[o.model] = [];
+      fasonVaqtlari[o.model].push(minutes);
+    }
+  });
+
+  const rows = MODELS.map(m => {
+    const list = fasonVaqtlari[m] || [];
+    if (list.length === 0) return `<div class="list-row"><span><b>${m}</b></span><span class="mono" style="color:var(--ink-soft);">- minut</span></div>`;
+    const avg = list.reduce((a,b)=>a+b,0) / list.length;
+    return `<div class="list-row"><span><b>${m}</b> (${list.length} ta konver)</span><span class="mono"><b>${Math.round(avg)}</b> minut</span></div>`;
+  }).join('');
+
+  return `
+  ${renderBackButton()}
+  <h2 class="section-title">⏱️ ${l.vaqtHisoboti}</h2>
+  <p style="font-size:12px;color:var(--ink-soft);margin-bottom:12px;">Har bir fason uchun boshidan omborga tayyor bo'lib o'tguncha ketgan o'rtacha minut:</p>
+  <div class="card scrollable-card">${rows}</div>
+  `;
+}
+
+function renderDoneModal() {
+  if (!state.doneModal) return '';
+  const l = L(); const { max } = state.doneModal;
+  return `
+  <div class="modal-overlay">
+    <div class="modal">
+      <h3>${l.nechtaTugadi}</h3>
+      <p>${l.jami}: ${max} ${l.dona}</p>
+      <input id="doneQtyInput" type="number" min="1" max="${max}" value="${max}" style="text-align:center;font-size:20px;font-weight:700;">
+      <div class="modal-actions">
+        <button class="secondary" onclick="state.doneModal=null;render();">${l.bekor}</button>
+        <button class="primary" onclick="confirmDone(document.getElementById('doneQtyInput').value)">${l.tasdiqlash}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderColorModal() {
+  if (!state.colorModal) return '';
+  const l = L();
+  const colorsHtml = COLORS.map(c => `
+    <div class="color-btn ${state.selectedColor === c ? 'selected' : ''}" onclick="state.selectedColor='${c}';renderColorModalUI();">
+      ${c}
+    </div>
+  `).join('');
+
+  return `
+  <div class="modal-overlay">
+    <div class="modal">
+      <h3>🎨 ${l.rangniTanlang}</h3>
+      <p>Stul qanday rangga bo'yaldi?</p>
+      <div class="color-grid">${colorsHtml}</div>
+      <div class="modal-actions">
+        <button class="secondary" onclick="state.colorModal=null;render();">${l.bekor}</button>
+        <button class="primary" onclick="confirmColor(state.selectedColor)">${l.tasdiqlash}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderColorModalUI() {
+  const el = document.querySelector('.modal-overlay');
+  if (el) el.outerHTML = renderColorModal();
+}
+
+function renderSplitModal() {
+  if (!state.splitModal) return '';
+  const l = L(); const { doneQty } = state.splitModal;
+  return `
+  <div class="modal-overlay">
+    <div class="modal">
+      <h3>✨ ${l.susalKerakmi}</h3>
+      <p>${l.susalIzoh} (${l.jami}: ${doneQty} ${l.dona})</p>
+      <input id="susalInput" type="number" min="0" max="${doneQty}" value="0" style="text-align:center;font-size:20px;font-weight:700;">
+      <div class="modal-actions">
+        <button class="secondary" onclick="skipSusal()">${l.susalBolmadi}</button>
+        <button class="primary" onclick="confirmSplit(document.getElementById('susalInput').value)">${l.tasdiqlash}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderDispatchModal() {
+  if (!state.dispatchModal) return '';
+  const l = L();
+  const stockOptions = Object.keys(state.ombor.zaxira)
+    .filter(k => state.ombor.zaxira[k] > 0)
+    .map(k => `<option value="${k}">${k} (${state.ombor.zaxira[k]} ${l.dona})</option>`).join('');
+
+  const konverOptions = state.orders.map(o => `<option value="${o.id}">${o.id} - ${o.model}</option>`).join('');
+
+  return `
+  <div class="modal-overlay">
+    <div class="modal">
+      <h3>${l.chiqimQilish}</h3>
+      ${stockOptions ? `
+        <label class="field-label">${l.konverRaqami}</label>
+        <select id="dKonver">
+          <option value="-">Tanlanmagan / Boshqa</option>
+          ${konverOptions}
+        </select>
+
+        <label class="field-label">${l.model}</label>
+        <select id="dModel">${stockOptions}</select>
+
+        <label class="field-label">${l.soni}</label>
+        <input id="dSoni" type="number" min="1" value="1">
+
+        <label class="field-label">${l.izoh}</label>
+        <input id="dIzoh" placeholder="Mijoz nomi / Izoh">
+
+        <div class="modal-actions">
+          <button class="secondary" onclick="state.dispatchModal=false;render();">${l.bekor}</button>
+          <button class="primary" onclick="dispatchStock(document.getElementById('dModel').value, document.getElementById('dKonver').value, document.getElementById('dSoni').value, document.getElementById('dIzoh').value)">${l.tasdiqlash}</button>
+        </div>
+      ` : `<p>Omborda zaxira yo'q</p><button class="secondary" style="width:100%" onclick="state.dispatchModal=false;render();">${l.yopish}</button>`}
+    </div>
+  </div>`;
+}
+
+function renderHistoryModal() {
+  if (!state.historyModal) return '';
+  const l = L();
+  const id = state.historyModal;
+  const entries = state.tarix.filter(t => t.konver === id).slice().reverse();
+  const rows = entries.map(t => `<div class="list-row"><span>${getStageLabel(t.bolim)}: ${t.amal} (${t.soni})</span><span class="mono">${formatDate(t.vaqt)}</span></div>`).join('') || `<div class="empty">${l.hechNarsaYoq}</div>`;
+
+  return `
+  <div class="modal-overlay" onclick="if(event.target===this){state.historyModal=null;render();}">
+    <div class="modal">
+      <h3>📋 ${id} - Tarix</h3>
+      <div style="max-height:250px;overflow-y:auto;">${rows}</div>
+      <div class="modal-actions" style="margin-top:12px;">
+        <button class="secondary" style="width:100%" onclick="state.historyModal=null;render();">${l.yopish}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function render() {
+  const el = document.getElementById('app');
+  if (!state.loaded) { el.innerHTML = `<div class="empty">Yuklanmoqda...</div>`; return; }
+  if (!state.user) { el.innerHTML = `${renderTopbar()}${renderLogin()}`; return; }
+
+  let content = '';
+  if (state.user.bolim === 'admin') {
+    if (state.tab === 'menu') content = renderAdminMenu();
+    else if (state.tab === 'yangi') content = renderYangiBuyurtma();
+    else if (state.tab === 'buyurtmalar') content = renderBuyurtmalar();
+    else if (state.tab === 'statistika') content = renderStatistika();
+    else if (state.tab === 'vaqt') content = renderVaqtHisoboti();
+    else if (state.tab === 'chiqimlar') content = renderChiqimlar();
+    else content = renderDeptDashboard();
+  } else if (state.user.bolim === 'ombor') {
+    if (state.tab === 'chiqimlar') content = renderChiqimlar();
+    else if (state.tab === 'statistika') content = renderStatistika();
+    else content = renderOmborDashboard();
+  } else {
+    if (state.tab === 'statistika') content = renderStatistika();
+    else content = renderDeptDashboard();
+  }
+
+  let nonAdminTabs = '';
+  if (state.user.bolim !== 'admin') {
+    const l = L();
+    const tabs = state.user.bolim === 'ombor' 
+      ? [['ombor', l.ombor], ['chiqimlar', l.chiqimTarixi], ['statistika', l.statistika]]
+      : [['ish', l.navbat], ['statistika', l.statistika]];
+
+    nonAdminTabs = `
+    <div style="display:flex;gap:8px;margin-bottom:16px;overflow-x:auto;">
+      ${tabs.map(([id, label]) => `
+        <div class="tab ${state.tab === id ? 'active' : ''}" style="padding:10px 16px;border-radius:12px;background:var(--surface);border:1px solid var(--line);font-size:13px;font-weight:600;cursor:pointer;${state.tab===id?'background:var(--primary);color:#fff;':''}" onclick="switchTab('${id}')">${label}</div>
+      `).join('')}
+    </div>`;
+  }
+
+  el.innerHTML = `
+    ${renderTopbar()}
+    ${renderUserbar()}
+    <main>
+      ${nonAdminTabs}
+      ${content}
+    </main>
+    ${renderDoneModal()}
+    ${renderColorModal()}
+    ${renderSplitModal()}
+    ${renderDispatchModal()}
+    ${renderHistoryModal()}
+    ${renderEditModal()}
+  `;
+}
+
+function appHandleBack(){
+  try{
+    if(state.user){
+      const def = state.user.bolim === 'admin' ? 'menu' : (state.user.bolim === 'ombor' ? 'ombor' : 'ish');
+      if(state.tab !== def){
+        state.tab = def;
+        render();
+        if(window.AppInventor) window.AppInventor.setWebViewString('HANDLED');
+        return;
+      }
+    }
+    if(window.AppInventor) window.AppInventor.setWebViewString('EXIT');
+  }catch(e){
+    if(window.AppInventor) window.AppInventor.setWebViewString('EXIT');
+  }
+}
+window.appHandleBack = appHandleBack;
+
+loadData();
+</script>
+</body>
+</html>
