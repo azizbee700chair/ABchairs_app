@@ -1,8 +1,9 @@
+
 <!DOCTYPE html>
 <html lang="uz">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Stul Nazorati va Boshqaruvi</title>
 
 <!-- SheetJS (Excel ga eksport qilish uchun) -->
@@ -32,7 +33,8 @@
     --shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
     --radius: 16px;
   }
-  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; touch-action: manipulation; }
+  html, body { touch-action: manipulation; }
   body { margin: 0; background: var(--bg); color: var(--ink); -webkit-font-smoothing: antialiased; min-height: 100vh; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
   #app { max-width: 600px; margin: 0 auto; min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; position: relative; }
@@ -317,18 +319,51 @@ function getStageLabel(key) {
 }
 
 // GOOGLE SHEETS BILAN DATA ALMASHINUVI
-async function syncFromSheets() {
+let pendingPushes = 0;
+let lastPushDoneAt = 0;
+const PUSH_GRACE_MS = 4000; // yozib bo'lgandan keyin shuncha vaqt fon-yangilanish ustidan yozmaydi
+
+async function syncFromSheets(force) {
+  // Agar hozir serverga yozayotgan bo'lsak, yoki yaqinda yozib bo'lgan bo'lsak,
+  // bu safar kelgan (ehtimol hali eskirgan) ma'lumotni o'tkazib yuboramiz —
+  // aks holda o'zimiz qilgan o'zgarish bir lahzaga "yo'qolib" qolishi mumkin.
+  if (!force && (pendingPushes > 0 || (Date.now() - lastPushDoneAt) < PUSH_GRACE_MS)) {
+    return;
+  }
   try {
     const res = await fetch(SCRIPT_URL + '?action=getAll');
     const data = await res.json();
     if (data && data.ok) {
-      state.orders = data.orders ? JSON.parse(data.orders) : [];
-      state.tarix = data.tarix ? JSON.parse(data.tarix) : [];
-      state.ombor = data.ombor ? JSON.parse(data.ombor) : { zaxira: {}, chiqimlar: [] };
-      if (!state.ombor.chiqimlar) state.ombor.chiqimlar = [];
-      if (!state.ombor.zaxira) state.ombor.zaxira = {};
+      const newOrders = data.orders ? JSON.parse(data.orders) : [];
+      const newTarix = data.tarix ? JSON.parse(data.tarix) : [];
+      const newOmbor = data.ombor ? JSON.parse(data.ombor) : { zaxira: {}, chiqimlar: [] };
+      if (!newOmbor.chiqimlar) newOmbor.chiqimlar = [];
+      if (!newOmbor.zaxira) newOmbor.zaxira = {};
+
+      // Faqat HAQIQATDAN o'zgargan bo'lsagina qayta chizamiz
+      const changed =
+        JSON.stringify(newOrders) !== JSON.stringify(state.orders) ||
+        JSON.stringify(newTarix) !== JSON.stringify(state.tarix) ||
+        JSON.stringify(newOmbor) !== JSON.stringify(state.ombor);
+
+      state.orders = newOrders;
+      state.tarix = newTarix;
+      state.ombor = newOmbor;
       saveLocalOrders(); saveLocalTarix(); saveLocalOmbor();
       isOnline = true;
+
+      // Foydalanuvchi hozir biror maydonga (parol, konver raqami va h.k.) yozayotgan bo'lsa,
+      // yoki hali login qilmagan bo'lsa, yoki "Yangi buyurtma" formasida bo'lsa —
+      // ekranni qayta chizib, uning yozganini o'chirib yubormaymiz.
+      // "force" (qo'lda yangilash tugmasi) bosilganda esa bu tekshiruvlar chetlab o'tiladi.
+      const activeTag = document.activeElement && document.activeElement.tagName;
+      const isTyping = activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA';
+      const safeToRender = force || (state.user && state.tab !== 'yangi' && !isTyping);
+
+      if ((changed || force) && safeToRender) {
+        render();
+      }
+      return;
     } else {
       isOnline = false;
     }
@@ -336,8 +371,24 @@ async function syncFromSheets() {
     isOnline = false;
     console.error('Sheets bilan sinxronlashda xato:', e);
   }
-  render();
+  if (force) render();
 }
+
+function manualRefresh() {
+  syncFromSheets(true);
+}
+
+// Lupa (pinch-zoom) tugmalarini butunlay bloklash
+document.addEventListener('touchmove', function(e){
+  if (e.touches && e.touches.length > 1) { e.preventDefault(); }
+}, { passive: false });
+document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', function(e){
+  const now = Date.now();
+  if (now - lastTouchEnd <= 300) { e.preventDefault(); } // qo'sh-bosishda zoom bo'lishini oldini oladi
+  lastTouchEnd = now;
+}, false);
 
 function startSheetsPolling() {
   syncFromSheets();
@@ -345,6 +396,7 @@ function startSheetsPolling() {
 }
 
 async function pushToSheets(key, valueObj) {
+  pendingPushes++;
   try {
     await fetch(SCRIPT_URL, {
       method: 'POST',
@@ -355,6 +407,9 @@ async function pushToSheets(key, valueObj) {
   } catch (e) {
     isOnline = false;
     console.error('Sheetsga yozishda xato:', e);
+  } finally {
+    pendingPushes--;
+    lastPushDoneAt = Date.now();
   }
 }
 
@@ -874,6 +929,7 @@ function renderTopbar() {
     <div class="brand">🪑 ${l.appname} <span class="tag">${l.tag}</span></div>
     <div style="display:flex;align-items:center;gap:10px;">
       ${netBadge}
+      <button onclick="manualRefresh()" title="Yangilash" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:6px 10px;font-size:14px;cursor:pointer;">🔄</button>
       <div class="langsw">
         <button class="${state.lang === 'uz' ? 'active' : ''}" onclick="changeLanguage('uz')">UZ</button>
         <button class="${state.lang === 'kk' ? 'active' : ''}" onclick="changeLanguage('kk')">KK</button>
