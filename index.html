@@ -306,7 +306,8 @@ let state = {
   selectedDeptFilter: 'zborka', selectedColor: 'kod-013',
   showFasonStat: false, showKonverStat: true,
   stockFilterModel: 'all', stockFilterColor: 'all',
-  chiqimFilterModel: 'all', chiqimFilterColor: 'all', showOmborSummaBreakdown: false, showIchSummaBreakdown: false
+  chiqimFilterModel: 'all', chiqimFilterColor: 'all', showOmborSummaBreakdown: false, showIchSummaBreakdown: false,
+  buyurtmaFrom: '', buyurtmaTo: ''
 };
 
 function L() { return T[state.lang] || T.uz; }
@@ -355,6 +356,23 @@ async function syncFromSheets(force) {
       newOrdersRaw.forEach(o => {
         if (seenIds.has(o.id)) { hadDuplicates = true; return; }
         seenIds.add(o.id);
+
+        // MUHIM: konverning o'zi takrorlanmagan bo'lsa ham, ICHIDAGI
+        // partiyalar (bo'laklar) orasida bir xil (bosqich/holat/soni/rang/
+        // qabulVaqti bir xil) yozuvlar bir necha marta takrorlanib qolishi
+        // mumkin edi — buni ham shu yerda tozalaymiz.
+        if (Array.isArray(o.partiyalar)) {
+          const seenSig = new Set();
+          const dedupedPartiyalar = [];
+          o.partiyalar.forEach(p => {
+            const sig = [p.bosqich, p.holat, p.soni, p.rang, p.susal, p.qabulVaqti, p.tugashVaqti].join('|');
+            if (seenSig.has(sig)) { hadDuplicates = true; return; }
+            seenSig.add(sig);
+            dedupedPartiyalar.push(p);
+          });
+          o.partiyalar = dedupedPartiyalar;
+        }
+
         newOrders.push(o);
       });
 
@@ -713,6 +731,22 @@ function editOrder(oldKonver, newKonver, newModel, newSoni, newNarx) {
   render();
 }
 
+// MUHIM: bir amal (qabul qilish/tugatish/bo'lish) bajarilayotgan paytda,
+// ikkinchi marta bosilib ketsa ham, u e'tiborsiz qoldiriladi — shu orqali
+// bir xil konver/partiya bir necha marta yaratilib qolishining oldi olinadi.
+let uiActionLock = false;
+function withActionLock(fn) {
+  return function (...args) {
+    if (uiActionLock) return;
+    uiActionLock = true;
+    try {
+      fn.apply(this, args);
+    } finally {
+      setTimeout(() => { uiActionLock = false; }, 400);
+    }
+  };
+}
+
 function acceptPartiya(konverId, pid) {
   const o = findOrder(konverId); if (!o) return;
   const p = o.partiyalar.find(x => x.pid === pid); if (!p) return;
@@ -722,6 +756,7 @@ function acceptPartiya(konverId, pid) {
   log(p.bosqich, 'qabul qildi', konverId, o.model, p.soni, '');
   render();
 }
+acceptPartiya = withActionLock(acceptPartiya);
 
 function openDoneModal(konverId, pid) {
   const o = findOrder(konverId); if (!o) return;
@@ -743,7 +778,7 @@ function confirmDone(rawVal) {
   const curBolim = p.bosqich;
 
   if (p.bosqich === 'lak') {
-    state.colorModal = { konverId, doneQty: qty, parentPid: pid, pRef: p, isFull: (qty === max) };
+    state.colorModal = { konverId, doneQty: qty, parentPid: pid, isFull: (qty === max) };
     render();
     return;
   }
@@ -798,17 +833,35 @@ function confirmDone(rawVal) {
   saveOrders();
   render();
 }
+confirmDone = withActionLock(confirmDone);
 
 function confirmColor(colorName) {
-  const { konverId, doneQty, pRef, isFull } = state.colorModal;
+  const { konverId, doneQty, parentPid, isFull } = state.colorModal;
   state.colorModal = null;
-  state.splitModal = { konverId, doneQty, colorName, pRef, isFull };
+  state.splitModal = { konverId, doneQty, colorName, parentPid, isFull };
   render();
 }
 
 function confirmSplit(susalRaw) {
-  const { konverId, doneQty, colorName, pRef, isFull } = state.splitModal;
+  const { konverId, doneQty, colorName, parentPid, isFull } = state.splitModal;
   const o = findOrder(konverId);
+  if (!o) { state.splitModal = null; render(); return; }
+
+  // MUHIM: pRefni oldindan saqlab qo'yish o'rniga, HAR DOIM shu paytdagi
+  // ENG YANGI (joriy) partiyalar ro'yxatidan qidirib topamiz. Chunki oyna
+  // ochiq turgan payt (son -> rang -> susal so'ralguncha) fon-sinxronlash
+  // ishga tushib, butun ro'yxatni yangilab qo'yishi mumkin edi — shunda
+  // eski (saqlab qo'yilgan) obyekt havolasi endi joriy ro'yxatda
+  // MAVJUD BO'LMAY QOLAR, va unga qilingan o'zgarish hech qayerga
+  // yozilmay, natijada "lak"da ham eski yozuv o'zgarishsiz qolib ketardi.
+  const pRef = o.partiyalar.find(x => x.pid === parentPid);
+  if (!pRef) {
+    alert('Bu bo\'lak allaqachon yangilangan yoki topilmadi. Iltimos, ro\'yxatni yangilab, qaytadan urinib ko\'ring.');
+    state.splitModal = null;
+    syncFromSheets(true);
+    return;
+  }
+
   let susalSoni = parseInt(susalRaw) || 0;
   susalSoni = Math.max(0, Math.min(doneQty, susalSoni));
   const oddiySoni = doneQty - susalSoni;
@@ -876,6 +929,9 @@ function confirmSplit(susalRaw) {
   state.splitModal = null;
   render();
 }
+confirmSplit = withActionLock(confirmSplit);
+confirmColor = withActionLock(confirmColor);
+adminRevertPartiya = withActionLock(adminRevertPartiya);
 
 function skipSusal() { confirmSplit(0); }
 
@@ -1700,7 +1756,14 @@ function renderBuyurtmalar() {
   ${dateFilterHtml}
   ${filteredOrders.length === 0 ? `<div class="empty">📋 ${l.hechNarsaYoq}</div>` : ''}
   ${filteredOrders.slice().reverse().map(o => {
-    const stages = o.partiyalar.map(p => `${getStageLabel(p.bosqich)} (${p.soni}${p.rang ? ' - ' + p.rang : ''})`).join(', ');
+    // MUHIM: bu yerda faqat HALI DAVOM ETAYOTGAN (holat 'tugadi' bo'lmagan)
+    // bo'laklar ko'rsatiladi. 'tugadi' deb belgilangan yozuvlar — allaqachon
+    // keyingi bosqichga o'tib bo'lgan, faqat tarix uchun saqlanadigan eski
+    // yozuvlar; ularni ham shu ro'yxatga qo'shsak, xuddi o'sha dona hali ham
+    // avvalgi bo'limda "qolib ketgandek" noto'g'ri ko'rinar edi.
+    const stages = o.partiyalar
+      .filter(p => p.holat !== 'tugadi' || p.bosqich === 'ombor')
+      .map(p => `${getStageLabel(p.bosqich)} (${p.soni}${p.rang ? ' - ' + p.rang : ''})`).join(', ') || 'Tayyor';
     return `
     <div class="card">
       <div class="ticket" style="cursor:pointer" onclick="state.historyModal='${o.id}';render();">
