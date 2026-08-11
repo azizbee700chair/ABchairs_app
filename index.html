@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -7,9 +8,6 @@
 
 <!-- SheetJS (Excel ga eksport qilish uchun) -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-<!-- Firebase SDK 8.x (Realtime Database uchun moslashtirilgan) -->
-<!-- Bu versiya Firebase o'rniga Google Sheets (Apps Script) bilan ishlaydi -->
 
 <style>
   :root {
@@ -47,7 +45,6 @@
   header.topbar .brand { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; }
   header.topbar .brand .tag { color: var(--accent); font-size: 12px; background: rgba(217, 119, 6, 0.2); padding: 2px 8px; border-radius: 6px; }
   
-  /* Online / Offline status */
   .net-status { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 12px; display: inline-flex; align-items: center; gap: 6px; }
   .net-status.online { background: #D1FAE5; color: #047857; }
   .net-status.offline { background: #FEE2E2; color: #B91C1C; }
@@ -83,10 +80,7 @@
 
   h2.section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-soft); margin: 20px 0 10px; display: flex; justify-content: space-between; align-items: center; }
 
-  .collapsible-header {
-    display: flex; justify-content: space-between; align-items: center;
-    cursor: pointer; user-select: none; padding: 4px 0;
-  }
+  .collapsible-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; padding: 4px 0; }
   .collapsible-header .arrow { font-size: 12px; transition: transform 0.2s ease; }
   .collapsible-header.open .arrow { transform: rotate(180deg); }
 
@@ -160,15 +154,8 @@
     font-weight: 800; font-size: 26px; color: #0F172A; 
     margin-bottom: 2px; display: flex; align-items: center; justify-content: center; gap: 8px; 
   }
-  .login-card select, .login-card input {
-    background: rgba(248, 250, 252, 0.9);
-    border: 1.5px solid var(--line);
-    font-weight: 500;
-  }
-  .login-card select:focus, .login-card input:focus {
-    background: #fff;
-    border-color: var(--primary);
-  }
+  .login-card select, .login-card input { background: rgba(248, 250, 252, 0.9); border: 1.5px solid var(--line); font-weight: 500; }
+  .login-card select:focus, .login-card input:focus { background: #fff; border-color: var(--primary); }
   .err { color: var(--danger); font-size: 12px; margin-bottom: 12px; font-weight: 600; text-align: center; }
 
   .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; backdrop-filter: blur(4px); }
@@ -199,6 +186,16 @@
   .clean-table tr:nth-child(even) { background: rgba(0,0,0,0.015); }
 
   .back-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; color: var(--primary); cursor: pointer; margin-bottom: 16px; }
+
+  /* Ombor Narx Kartalari Dizayni */
+  .stock-price-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+    margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .stock-price-card .st-title { font-weight: 700; font-size: 14px; color: var(--ink); }
+  .stock-price-card .st-sub { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .stock-price-card .st-total { font-weight: 800; font-size: 15px; color: #059669; text-align: right; }
+  .stock-price-card .st-unit { font-size: 11px; color: var(--ink-soft); text-align: right; }
 </style>
 </head>
 <body>
@@ -206,11 +203,10 @@
 
 <script>
 // --- GOOGLE SHEETS (APPS SCRIPT) SOZLAMALARI ---
-// MUHIM: pastdagi manzilni o'zingizning Apps Script "Web app" deploy manzilingizga almashtiring (.../exec bilan tugashi kerak)
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwkntoYLEFECZKb30nvZHigMUQf064Z3LnHj1TeEZAKrrPxQk_qccyuEHn2Rs2nCF6D/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzaGCYzlnqlajw6DLt_GuQTEooWysmFubOd5JNzXzU0nbHKHBAsLqxRSf6_oW4v63n4/exec';
 
 let isOnline = false;
-const SYNC_INTERVAL_MS = 8000; // har 8 soniyada boshqa bo'limlardan yangilanishni tekshiradi
+const SYNC_INTERVAL_MS = 8000;
 
 const storage = {
   get: (key) => {
@@ -261,13 +257,13 @@ const T = {
   uz: {
     appname:'Stul Nazorati', tag:'Mebel Seh', kirish:'Kirish', bolim:'Bo\'lim', parol:'Parol',
     xato:'Login yoki parol noto\'g\'ri', chiqish:'Chiqish', yangiBuyurtma:'Yangi buyurtma',
-    buyurtmalar:'Buyurtmalar va Tahrir', statistika:'Statistika', ombor:'Ombor', navbat:'Navbatdagi ishlar',
+    buyurtmalar:'Buyurtmalar va Tahrir', statistika:'Statistika', ombor:'OMBOR NAZORATI', navbat:'Navbatdagi ishlar',
     konverRaqami:'Konver raqami', model:'Stul turi', soni:'Soni (dona)', saqlash:'Saqlash',
     qabulQildim:'Qabul qildim', tugatdim:'Tugatdim', kutilmoqda:'Kutilmoqda', jarayonda:'Jarayonda',
     boshBolim:'Boshqaruvchi', hechNarsaYoq:'Hozircha bu bo\'limda ish yo\'q',
     barchaBuyurtmalar:'Barcha buyurtmalar', jami:'Jami', susalKerakmi:'Susal bosqichidan o\'tadimi?',
     susalIzoh:'Susal bosqichidan nechta stul o\'tadi?', tasdiqlash:'Tasdiqlash', bekor:'Bekor qilish',
-    zaxira:'Ombordagi zaxira', chiqimQilish:'Chiqim qilish', chiqimTarixi:'Chiqim tarixi',
+    zaxira:'Ombordagi zaxira va narxlar', chiqimQilish:'Chiqim qilish', chiqimTarixi:'Chiqim tarixi',
     izoh:'Izoh', dona:'dona', sanaDan:'Boshlanish sanasi', sanaGacha:'Tugash sanasi',
     bolimBoyicha:'Bo\'lim bo\'yicha bajarilgan', jamiTayyor:'Jami ombordagi stullar', omborgaKirim:'Omborga kirim qildim',
     holatTayyor:'Tayyor', holatJarayonda:'Jarayonda', yopish:'Yopish', konverMavjud:'Bu konver raqami mavjud',
@@ -306,9 +302,12 @@ let state = {
   lang: 'uz', user: null, loginErr: false, tab: 'menu',
   orders: [], tarix: [], ombor: { zaxira: {}, chiqimlar: [] },
   loaded: false, doneModal: null, colorModal: null, splitModal: null,
-  historyModal: null, editModal: null, dispatchModal: false, statFrom: '', statTo: '',
+  historyModal: null, editModal: null, dispatchModal: false, manualKirimModal: false,
+  editStockModal: null, editChiqimModal: null, statFrom: '', statTo: '',
   selectedDeptFilter: 'zborka', selectedColor: 'kod-013',
-  showFasonStat: false, showKonverStat: true
+  showFasonStat: false, showKonverStat: true,
+  stockFilterModel: 'all', stockFilterColor: 'all',
+  chiqimFilterModel: 'all', chiqimFilterColor: 'all', showOmborSummaBreakdown: false, showIchSummaBreakdown: false
 };
 
 function L() { return T[state.lang] || T.uz; }
@@ -320,26 +319,46 @@ function getStageLabel(key) {
 // GOOGLE SHEETS BILAN DATA ALMASHINUVI
 let pendingPushes = 0;
 let lastPushDoneAt = 0;
-const PUSH_GRACE_MS = 4000; // yozib bo'lgandan keyin shuncha vaqt fon-yangilanish ustidan yozmaydi
+const PUSH_GRACE_MS = 6000;
 
 async function syncFromSheets(force) {
-  // Agar hozir serverga yozayotgan bo'lsak, yoki yaqinda yozib bo'lgan bo'lsak,
-  // bu safar kelgan (ehtimol hali eskirgan) ma'lumotni o'tkazib yuboramiz —
-  // aks holda o'zimiz qilgan o'zgarish bir lahzaga "yo'qolib" qolishi mumkin.
   if (!force && (pendingPushes > 0 || (Date.now() - lastPushDoneAt) < PUSH_GRACE_MS)) {
     return;
   }
   try {
     const res = await fetch(SCRIPT_URL + '?action=getAll');
     const data = await res.json();
+
+    // MUHIM: fetch bir necha soniya davom etishi mumkin. Shu oraliqda
+    // foydalanuvchi biror amal bajargan (yozish boshlangan) bo'lishi ehtimoli
+    // bor — shuning uchun natijani QABUL QILISHDAN OLDIN yana bir bor
+    // tekshiramiz. Aks holda hali yetib bormagan eski ma'lumot, endigina
+    // qilingan o'zgarishning ustidan yozib yuborishi mumkin edi.
+    if (!force && (pendingPushes > 0 || (Date.now() - lastPushDoneAt) < PUSH_GRACE_MS)) {
+      return;
+    }
+
     if (data && data.ok) {
-      const newOrders = data.orders ? JSON.parse(data.orders) : [];
+      const newOrdersRaw = data.orders ? JSON.parse(data.orders) : [];
       const newTarix = data.tarix ? JSON.parse(data.tarix) : [];
       const newOmbor = data.ombor ? JSON.parse(data.ombor) : { zaxira: {}, chiqimlar: [] };
       if (!newOmbor.chiqimlar) newOmbor.chiqimlar = [];
       if (!newOmbor.zaxira) newOmbor.zaxira = {};
 
-      // Faqat HAQIQATDAN o'zgargan bo'lsagina qayta chizamiz
+      // MUHIM: agar biror sabab bilan bir xil konver ID bir necha marta
+      // takrorlanib qolgan bo'lsa (masalan eskirgan holatda yaratilgan bo'lsa),
+      // shu yerda avtomatik aniqlab, faqat birinchisini qoldiramiz va
+      // tozalangan holatni serverga qaytarib yozamiz — shu bilan ma'lumot
+      // asta-sekin o'z-o'zini tuzatib boradi.
+      const seenIds = new Set();
+      const newOrders = [];
+      let hadDuplicates = false;
+      newOrdersRaw.forEach(o => {
+        if (seenIds.has(o.id)) { hadDuplicates = true; return; }
+        seenIds.add(o.id);
+        newOrders.push(o);
+      });
+
       const changed =
         JSON.stringify(newOrders) !== JSON.stringify(state.orders) ||
         JSON.stringify(newTarix) !== JSON.stringify(state.tarix) ||
@@ -351,10 +370,10 @@ async function syncFromSheets(force) {
       saveLocalOrders(); saveLocalTarix(); saveLocalOmbor();
       isOnline = true;
 
-      // Foydalanuvchi hozir biror maydonga (parol, konver raqami va h.k.) yozayotgan bo'lsa,
-      // yoki hali login qilmagan bo'lsa, yoki "Yangi buyurtma" formasida bo'lsa —
-      // ekranni qayta chizib, uning yozganini o'chirib yubormaymiz.
-      // "force" (qo'lda yangilash tugmasi) bosilganda esa bu tekshiruvlar chetlab o'tiladi.
+      if (hadDuplicates) {
+        pushOrdersQueued(); // tozalangan ro'yxatni serverga qaytarib yozish
+      }
+
       const activeTag = document.activeElement && document.activeElement.tagName;
       const isTyping = activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA';
       const safeToRender = force || (state.user && state.tab !== 'yangi' && !isTyping);
@@ -377,7 +396,6 @@ function manualRefresh() {
   syncFromSheets(true);
 }
 
-// Lupa (pinch-zoom) tugmalarini butunlay bloklash
 document.addEventListener('touchmove', function(e){
   if (e.touches && e.touches.length > 1) { e.preventDefault(); }
 }, { passive: false });
@@ -385,7 +403,7 @@ document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
 let lastTouchEnd = 0;
 document.addEventListener('touchend', function(e){
   const now = Date.now();
-  if (now - lastTouchEnd <= 300) { e.preventDefault(); } // qo'sh-bosishda zoom bo'lishini oldini oladi
+  if (now - lastTouchEnd <= 300) { e.preventDefault(); }
   lastTouchEnd = now;
 }, false);
 
@@ -396,20 +414,48 @@ function startSheetsPolling() {
 
 async function pushToSheets(key, valueObj) {
   pendingPushes++;
-  try {
-    await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // CORS preflightdan qochish uchun
-      body: JSON.stringify({ action: 'set', key, value: JSON.stringify(valueObj) })
-    });
-    isOnline = true;
-  } catch (e) {
-    isOnline = false;
-    console.error('Sheetsga yozishda xato:', e);
-  } finally {
-    pendingPushes--;
-    lastPushDoneAt = Date.now();
+  if (typeof render === 'function') render(); // saqlanmoqda... dumaloqini darhol ko'rsatish
+
+  let success = false;
+  let attempt = 1;
+  const MAX_ATTEMPTS = 4;
+
+  while (attempt <= MAX_ATTEMPTS && !success) {
+    try {
+      const res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'set', key, value: JSON.stringify(valueObj) })
+      });
+      const data = await res.json();
+      if (data && data.ok) {
+        success = true;
+        isOnline = true;
+      } else {
+        console.error('Server saqlashni rad etdi:', data && data.error);
+        isOnline = false;
+      }
+    } catch (e) {
+      isOnline = false;
+      console.error('Sheetsga yozishda xato:', e);
+    }
+
+    if (!success && attempt < MAX_ATTEMPTS) {
+      // MUHIM: server band bo'lgani yoki tarmoq xatosi tufayli yozib bo'lmasa,
+      // jim-jit "saqlandi" deb hisoblab qo'ymasdan, biroz kutib QAYTA URINAMIZ —
+      // shu butun jarayon davomida "Saqlanmoqda..." dumalog'i uzluksiz ko'rinadi.
+      await new Promise(r => setTimeout(r, 1200 * attempt));
+    }
+    attempt++;
   }
+
+  pendingPushes--;
+  if (success) {
+    lastPushDoneAt = Date.now();
+  } else {
+    alert('⚠️ Diqqat: ma\'lumot serverga saqlanmadi (internet yoki server bilan bog\'lanishda muammo). Iltimos, internetni tekshirib, amalni qayta bajaring.');
+  }
+  if (typeof render === 'function') render(); // yakunda dumaloqini yashirish
 }
 
 function loadData() {
@@ -420,13 +466,14 @@ function loadData() {
   const t = storage.get('tarix'); state.tarix = t ? JSON.parse(t.value) : [];
   const om = storage.get('ombor'); state.ombor = om ? JSON.parse(om.value) : { zaxira: {}, chiqimlar: [] };
   if(!state.ombor.chiqimlar) state.ombor.chiqimlar = [];
-  
+  if(!state.ombor.zaxira) state.ombor.zaxira = {};
+
   const savedUser = storage.get('app_user');
   if (savedUser) state.user = JSON.parse(savedUser.value);
   
   const savedTab = storage.get('app_tab');
   if (savedTab) state.tab = savedTab.value;
-  else state.tab = (state.user && state.user.bolim === 'admin') ? 'menu' : 'ish';
+  else state.tab = (state.user && state.user.bolim === 'admin') ? 'menu' : (state.user && state.user.bolim === 'ombor' ? 'ombor_menu' : 'ish');
 
   state.loaded = true;
   startSheetsPolling();
@@ -443,24 +490,83 @@ function saveLocalOrders() { storage.set('buyurtmalar', JSON.stringify(state.ord
 function saveLocalTarix() { storage.set('tarix', JSON.stringify(state.tarix)); }
 function saveLocalOmbor() { storage.set('ombor', JSON.stringify(state.ombor)); }
 
+// MUHIM: agar foydalanuvchi tez-tez amal bajarsa, bir nechta "yozish" so'rovi
+// deyarli bir vaqtda yuborilib qolishi mumkin edi. Tarmoqda ular NOTO'G'RI
+// TARTIBDA yetib borsa (kechroq boshlangani tezroq tugasa), eski ma'lumot
+// yangisining ustidan yozib, amal "yo'qolib qolgandek" ko'rinar edi.
+// Shuning uchun endi har bir kalit (orders/tarix/ombor) uchun BITTA VAQTDA
+// FAQAT BITTA so'rov yuboriladi; shu payt yana o'zgarish bo'lsa, navbatga
+// qo'yiladi va oldingisi tugagach, ENG SO'NGGI holat yana yuboriladi.
+function makeQueuedPusher(key, getValue) {
+  let inFlight = false;
+  let queued = false;
+  async function run() {
+    if (inFlight) { queued = true; return; }
+    inFlight = true;
+    pendingPushes++; render();
+    try {
+      await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'set', key, value: JSON.stringify(getValue()) })
+      });
+      isOnline = true;
+    } catch (e) {
+      isOnline = false;
+      console.error('Sheetsga yozishda xato:', e);
+    } finally {
+      pendingPushes--; lastPushDoneAt = Date.now();
+      inFlight = false;
+      render();
+      if (queued) { queued = false; run(); }
+    }
+  }
+  return run;
+}
+
+const pushOrdersQueued = makeQueuedPusher('orders', () => state.orders);
+const pushTarixQueued = makeQueuedPusher('tarix', () => state.tarix);
+const pushOmborQueued = makeQueuedPusher('ombor', () => state.ombor);
+
 function saveOrders() {
   saveLocalOrders();
-  pushToSheets('orders', state.orders);
+  pushOrdersQueued();
 }
 
 function saveTarix() {
   saveLocalTarix();
-  pushToSheets('tarix', state.tarix);
+  pushTarixQueued();
 }
 
 function saveOmbor() {
   saveLocalOmbor();
-  pushToSheets('ombor', state.ombor);
+  pushOmborQueued();
 }
 
 function log(bolim, amal, konver, model, soni, izoh, rang) {
-  state.tarix.push({ vaqt: new Date().toISOString(), bolim, amal, konver, model, soni: soni || 0, izoh: izoh || '', rang: rang || '' });
-  saveTarix();
+  const entry = { vaqt: new Date().toISOString(), bolim, amal, konver, model, soni: soni || 0, izoh: izoh || '', rang: rang || '' };
+  state.tarix.push(entry);
+  saveLocalTarix();
+  appendTarixToServer(entry); // faqat shu bitta yozuvni qo'shadi, butun tarixni qayta yozmaydi
+}
+
+// Tarixga faqat bitta yangi yozuvni qo'shish (butun ro'yxatni qayta yozmaslik uchun)
+async function appendTarixToServer(entry) {
+  pendingPushes++; render();
+  try {
+    await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'appendTarix', entry })
+    });
+    isOnline = true;
+  } catch (e) {
+    isOnline = false;
+    console.error('Tarixga yozishda xato:', e);
+  } finally {
+    pendingPushes--; lastPushDoneAt = Date.now();
+    render();
+  }
 }
 
 function switchTab(tabName) {
@@ -496,16 +602,25 @@ function calcDurationMinutes(startIso, endIso) {
   return Math.max(0, Math.round(diff / (1000 * 60)));
 }
 
-function createOrder(konver, model, soni) {
+async function createOrder(konver, model, soni, narx) {
   konver = konver.trim();
   if (!konver || !model || !soni || soni <= 0) { alert(L().toliqTuldiring); return false; }
+
+  // MUHIM: konver mavjudligini tekshirishdan oldin, avval serverdagi ENG SO'NGGI
+  // ma'lumotni olib kelamiz. Aks holda, agar local xotira hali eskirgan/bo'sh bo'lsa
+  // (masalan ilova endigina qayta yuklangan bo'lsa), bir xil konver bir necha marta
+  // yaratilib, bir-birining ustiga tushib qolishi mumkin edi.
+  await syncFromSheets(true);
+
   if (findOrder(konver)) { alert(L().konverMavjud); return false; }
   
   const now = new Date().toISOString();
   const BoshlangichBosqich = (model.toLowerCase() === 'owen') ? 'shkurka' : 'zborka';
+  const narxBirlik = parseFloat(narx) || 0;
 
   state.orders.push({
     id: konver, model, jamiSoni: soni, sana: now, holat: 'jarayonda',
+    narxBirlik: narxBirlik,
     partiyalar: [{ 
       pid: konver + '-' + Date.now(), 
       soni, 
@@ -533,37 +648,26 @@ function deleteOrder(konverId) {
       if (p.bosqich === 'ombor' && p.holat === 'tugadi') {
         const key = p.rang ? `${o.model}-${p.rang}` : o.model;
         if (state.ombor.zaxira[key]) {
-          state.ombor.zaxira[key] -= p.soni;
-          if (state.ombor.zaxira[key] <= 0) {
+          let item = state.ombor.zaxira[key];
+          let curQty = typeof item === 'object' ? item.soni : parseInt(item);
+          curQty -= p.soni;
+          if (curQty <= 0) {
             delete state.ombor.zaxira[key];
+          } else if (typeof item === 'object') {
+            item.soni = curQty;
+          } else {
+            state.ombor.zaxira[key] = curQty;
           }
         }
       }
     });
 
     if (state.ombor.chiqimlar && state.ombor.chiqimlar.length > 0) {
-      let remainingToDelete = Number(o.jamiSoni || 0);
-
-      for (let i = 0; i < state.ombor.chiqimlar.length; i++) {
-        if (remainingToDelete <= 0) break;
-
-        let chiqim = state.ombor.chiqimlar[i];
-
-        if (chiqim.modelKey && chiqim.modelKey.startsWith(o.model)) {
-          let chiqimSoni = Number(chiqim.soni || 0);
-
-          if (chiqimSoni <= remainingToDelete) {
-            remainingToDelete -= chiqimSoni;
-            state.ombor.chiqimlar.splice(i, 1);
-            i--;
-          } else {
-            chiqim.soni = chiqimSoni - remainingToDelete;
-            remainingToDelete = 0;
-          }
-        }
-      }
+      // MUHIM: faqat aynan shu konver raqamiga tegishli chiqim yozuvlari o'chiriladi
+      // (avval model nomi bo'yicha taxminiy izlangani uchun bir xil fasondagi
+      // boshqa buyurtmalarning chiqimlari ham xato o'chib ketishi mumkin edi)
+      state.ombor.chiqimlar = state.ombor.chiqimlar.filter(c => c.konver !== konverId);
     }
-
     saveOmbor();
   }
 
@@ -577,7 +681,7 @@ function deleteOrder(konverId) {
   render();
 }
 
-function editOrder(oldKonver, newKonver, newModel, newSoni) {
+function editOrder(oldKonver, newKonver, newModel, newSoni, newNarx) {
   newKonver = newKonver.trim();
   if (!newKonver || !newModel || !newSoni || newSoni <= 0) { alert(L().toliqTuldiring); return; }
   
@@ -591,6 +695,7 @@ function editOrder(oldKonver, newKonver, newModel, newSoni) {
   o.id = newKonver;
   o.model = newModel;
   o.jamiSoni = newSoni;
+  o.narxBirlik = parseFloat(newNarx) || 0;
   
   o.partiyalar.forEach(p => {
     p.pid = p.pid.replace(oldKonver, newKonver);
@@ -652,7 +757,14 @@ function confirmDone(rawVal) {
 
   if (p.bosqich === 'ombor') {
     const key = p.rang ? `${o.model}-${p.rang}` : o.model;
-    state.ombor.zaxira[key] = (state.ombor.zaxira[key] || 0) + qty;
+    const konverNarxi = parseFloat(o.narxBirlik) || 0;
+    if (typeof state.ombor.zaxira[key] === 'object') {
+      state.ombor.zaxira[key].soni += qty;
+      if (konverNarxi > 0) state.ombor.zaxira[key].narx = konverNarxi;
+    } else {
+      const oldVal = parseInt(state.ombor.zaxira[key]) || 0;
+      state.ombor.zaxira[key] = { soni: oldVal + qty, narx: konverNarxi };
+    }
     saveOmbor();
   } else {
     const nxt = nextStage(p.bosqich);
@@ -703,6 +815,13 @@ function confirmSplit(susalRaw) {
   const oddiySoni = doneQty - susalSoni;
   const now = new Date().toISOString();
 
+  // MUHIM: pRef.soni hozircha hali o'zgartirilmagan bo'lgani uchun, bu yerda
+  // aynan shu partiyaning ASL (to'liq) sonini olib qolamiz — pastda qolgan
+  // (hali tugallanmagan) qismni yo'qotmaslik uchun kerak bo'ladi.
+  const originalMax = pRef.soni;
+  const qabulVaqtiOldin = pRef.qabulVaqti;
+  const leftover = originalMax - doneQty;
+
   pRef.soni = doneQty;
   pRef.tugashVaqti = now;
   pRef.holat = 'tugadi';
@@ -736,6 +855,22 @@ function confirmSplit(susalRaw) {
     });
   }
 
+  // Agar 12 tadan faqat 6 tasi yopilgan bo'lsa (masalan), qolgan 6 tasi
+  // yo'qolib ketmasligi uchun — u hali "lak karkas"da, jarayonda holida qoladi.
+  if (leftover > 0) {
+    o.partiyalar.push({
+      pid: konverId + '-' + Date.now() + '-qolgan',
+      soni: leftover,
+      tugatilganSoni: 0,
+      bosqich: 'lak',
+      susal: false,
+      holat: 'jarayonda',
+      rang: null,
+      qabulVaqti: qabulVaqtiOldin,
+      tugashVaqti: null
+    });
+  }
+
   log('lak', 'tugatdi (rang/susal)', konverId, o.model, doneQty, `Rang: ${colorName}, Susal: ${susalSoni}`);
   recomputeHolat(o);
   saveOrders();
@@ -745,16 +880,62 @@ function confirmSplit(susalRaw) {
 
 function skipSusal() { confirmSplit(0); }
 
+// --- OMBORGA REAL TMO DAN KIRIM QILISH ---
+function addManualStock(model, rang, soni, narx) {
+  soni = parseInt(soni) || 0; narx = parseFloat(narx) || 0;
+  if (!model || soni <= 0) { alert("Model va sonini to'g'ri kiriting!"); return; }
+
+  const key = rang ? `${model}-${rang}` : model;
+  
+  if (state.ombor.zaxira[key]) {
+    if (typeof state.ombor.zaxira[key] === 'object') {
+      state.ombor.zaxira[key].soni += soni;
+      if (narx > 0) state.ombor.zaxira[key].narx = narx;
+    } else {
+      const oldVal = parseInt(state.ombor.zaxira[key]) || 0;
+      state.ombor.zaxira[key] = { soni: oldVal + soni, narx: narx };
+    }
+  } else {
+    state.ombor.zaxira[key] = { soni: soni, narx: narx };
+  }
+
+  saveOmbor();
+  log('ombor', 'kirim', 'SKLAD', model, soni, `Rang: ${rang}, Narx: $${narx}`);
+  state.manualKirimModal = false;
+  render();
+}
+
+function updateStockDetails(key, newSoni, newNarx) {
+  newSoni = parseInt(newSoni) || 0; newNarx = parseFloat(newNarx) || 0;
+  if (newSoni <= 0) {
+    delete state.ombor.zaxira[key];
+  } else {
+    state.ombor.zaxira[key] = { soni: newSoni, narx: newNarx };
+  }
+  saveOmbor();
+  state.editStockModal = null;
+  render();
+}
+
 function dispatchStock(key, selectedKonver, soni, izoh) {
   soni = parseInt(soni) || 0; if (soni <= 0) return;
-  const current = state.ombor.zaxira[key] || 0;
-  if (soni > current) { alert('Omborda yetarli zaxira yo\'q!'); return; }
   
-  state.ombor.zaxira[key] = current - soni;
+  let currentObj = state.ombor.zaxira[key];
+  let currentQty = typeof currentObj === 'object' ? currentObj.soni : (parseInt(currentObj) || 0);
+
+  if (soni > currentQty) { alert('Omborda yetarli zaxira yo\'q!'); return; }
   
+  if (typeof currentObj === 'object') {
+    currentObj.soni -= soni;
+    if (currentObj.soni <= 0) delete state.ombor.zaxira[key];
+  } else {
+    state.ombor.zaxira[key] = currentQty - soni;
+    if (state.ombor.zaxira[key] <= 0) delete state.ombor.zaxira[key];
+  }
+
   if (!state.ombor.chiqimlar) state.ombor.chiqimlar = [];
-  
   state.ombor.chiqimlar.push({
+    id: 'ch-' + Date.now(),
     vaqt: new Date().toISOString(),
     konver: selectedKonver || '-',
     modelKey: key,
@@ -762,9 +943,75 @@ function dispatchStock(key, selectedKonver, soni, izoh) {
     izoh
   });
 
+  saveOmbor(); log('ombor', 'chiqim qildi', selectedKonver || '-', key, soni, izoh);
+  state.dispatchModal = false; render();
+}
+
+// --- CHIQIMNI TAHRIRLASH VA O'CHIRISH FUNKSIYALARI ---
+function deleteChiqim(chiqimIndex) {
+  if (!confirm("Ushbu chiqimni o'chirmoqchimisiz? Chiqimdagi stullar ombor zaxirasiga qaytariladi.")) return;
+  const list = state.ombor.chiqimlar || [];
+  const c = list[chiqimIndex];
+  if (!c) return;
+
+  // Omborga qaytarish
+  const key = c.modelKey;
+  if (state.ombor.zaxira[key]) {
+    if (typeof state.ombor.zaxira[key] === 'object') {
+      state.ombor.zaxira[key].soni += c.soni;
+    } else {
+      state.ombor.zaxira[key] = (parseInt(state.ombor.zaxira[key]) || 0) + c.soni;
+    }
+  } else {
+    state.ombor.zaxira[key] = { soni: c.soni, narx: 0 };
+  }
+
+  list.splice(chiqimIndex, 1);
   saveOmbor();
-  log('ombor', 'chiqim qildi', selectedKonver || '-', key, soni, izoh);
-  state.dispatchModal = false;
+  log('ombor', 'chiqim o\'chirildi', c.konver || '-', key, c.soni, 'Chiqim o\'chirildi va omborga qaytarildi');
+  render();
+}
+
+function openEditChiqimModal(idx) {
+  const c = state.ombor.chiqimlar[idx];
+  if (!c) return;
+  state.editChiqimModal = { index: idx, modelKey: c.modelKey, soni: c.soni, izoh: c.izoh || '' };
+  render();
+}
+
+function saveEditChiqim(idx, newSoni, newIzoh) {
+  newSoni = parseInt(newSoni) || 0;
+  if (newSoni <= 0) { alert("Soni 1 dan kichik bo'lishi mumkin emas!"); return; }
+
+  const c = state.ombor.chiqimlar[idx];
+  if (!c) return;
+
+  const diff = newSoni - c.soni; // Masalan: oldin 10 edi, endi 12 bo'lsa (+2 ta ko'p chiqim bo'ldi => zaxiradan 2 ta ayiramiz)
+  const key = c.modelKey;
+
+  let currentObj = state.ombor.zaxira[key];
+  let currentQty = typeof currentObj === 'object' ? currentObj.soni : (parseInt(currentObj) || 0);
+
+  if (diff > 0 && diff > currentQty) {
+    alert("Omborda bunday miqdorda ortiqcha zaxira yo'q!");
+    return;
+  }
+
+  // Zaxirani yangilash
+  if (typeof currentObj === 'object') {
+    currentObj.soni -= diff;
+    if (currentObj.soni <= 0) delete state.ombor.zaxira[key];
+  } else {
+    state.ombor.zaxira[key] = currentQty - diff;
+    if (state.ombor.zaxira[key] <= 0) delete state.ombor.zaxira[key];
+  }
+
+  c.soni = newSoni;
+  c.izoh = newIzoh;
+
+  saveOmbor();
+  log('ombor', 'chiqim tahrir', c.konver || '-', key, newSoni, `Yangi izoh: ${newIzoh}`);
+  state.editChiqimModal = null;
   render();
 }
 
@@ -906,7 +1153,7 @@ function doLogin() {
   state.loginErr = false;
   storage.set('app_user', JSON.stringify(u));
   
-  const initialTab = u.bolim === 'admin' ? 'menu' : (u.bolim === 'ombor' ? 'ombor' : 'ish');
+  const initialTab = u.bolim === 'admin' ? 'menu' : (u.bolim === 'ombor' ? 'ombor_menu' : 'ish');
   switchTab(initialTab);
 }
 
@@ -940,10 +1187,104 @@ function renderTopbar() {
 function renderUserbar() {
   const l = L();
   const nomi = state.user.bolim === 'admin' ? l.boshBolim : getStageLabel(state.user.bolim);
+  const fixBtn = state.user.bolim !== 'admin'
+    ? `<button class="logout" style="margin-right:6px;" onclick="openFixModal()" title="Xato yopilgan konverni qaytarish">🛠</button>`
+    : '';
   return `
   <div class="userbar">
     <div><span class="user-avatar">${nomi.charAt(0)}</span><b>${nomi}</b></div>
-    <button class="logout" onclick="doLogout()">${l.chiqish}</button>
+    <div>${fixBtn}<button class="logout" onclick="doLogout()">${l.chiqish}</button></div>
+  </div>`;
+}
+
+// --- ADMIN-PAROLLI "TUZATISH" (xato yopilgan konverni shu bo'limga qaytarish) ---
+function openFixModal() {
+  state.fixModal = { step: 'password', pwd: '', search: '' };
+  render();
+}
+
+function checkFixPassword() {
+  const val = document.getElementById('fixPwdInput').value;
+  const adminUser = USERS.find(u => u.bolim === 'admin');
+  if (adminUser && val === adminUser.parol) {
+    state.fixModal = { step: 'list', search: '' };
+    render();
+  } else {
+    alert('Parol noto\'g\'ri');
+  }
+}
+
+function adminRevertPartiya(konverId, pid) {
+  const o = findOrder(konverId); if (!o) return;
+  const p = o.partiyalar.find(x => x.pid === pid); if (!p) return;
+  const oldBosqich = p.bosqich;
+  const targetBosqich = state.user.bolim;
+  if (!confirm(`"${konverId}" (${o.model}, ${p.soni} dona) ${getStageLabel(oldBosqich)}dan ${getStageLabel(targetBosqich)}ga qaytarilsinmi?`)) return;
+
+  p.bosqich = targetBosqich;
+  p.holat = 'kutilmoqda';
+  p.qabulVaqti = null;
+  p.tugashVaqti = null;
+  log(targetBosqich, 'admin tomonidan qaytarildi', konverId, o.model, p.soni, `${getStageLabel(oldBosqich)}dan qaytarildi`);
+  recomputeHolat(o);
+  saveOrders();
+  state.fixModal = null;
+  render();
+}
+
+function renderFixModal() {
+  if (!state.fixModal) return '';
+  const myBolim = state.user.bolim;
+
+  if (state.fixModal.step === 'password') {
+    return `
+    <div class="modal-overlay">
+      <div class="modal">
+        <h3>🛠 Tuzatish — Admin paroli</h3>
+        <p>Xato yopilgan konverni "${getStageLabel(myBolim)}" bo'limiga qaytarish uchun admin parolini kiriting.</p>
+        <input id="fixPwdInput" type="password" placeholder="Admin paroli" onkeydown="if(event.key==='Enter') checkFixPassword();">
+        <div class="actions">
+          <button class="secondary" onclick="state.fixModal=null; render();">Bekor qilish</button>
+          <button class="primary" onclick="checkFixPassword()">Tasdiqlash</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // step === 'list'
+  const search = (state.fixModal.search || '').toLowerCase();
+  const rows = [];
+  state.orders.forEach(o => {
+    o.partiyalar.forEach(p => {
+      if (p.holat === 'tugadi' && p.bosqich !== myBolim) return; // faqat mazmunli (hali yakunlanmagan yoki boshqa joyda) partiyalar
+      if (p.bosqich === myBolim && p.holat === 'kutilmoqda') return; // allaqachon shu yerda kutayotganlar kerak emas
+      if (search && !o.id.toLowerCase().includes(search) && !o.model.toLowerCase().includes(search)) return;
+      rows.push({ o, p });
+    });
+  });
+
+  return `
+  <div class="modal-overlay">
+    <div class="modal" style="max-width:420px;">
+      <h3>🛠 Konverni qaytarish</h3>
+      <p>Ro'yxatdan konverni topib, "${getStageLabel(myBolim)}"ga qaytaring.</p>
+      <input placeholder="Konver yoki fason bo'yicha qidirish..." value="${state.fixModal.search || ''}" oninput="state.fixModal.search=this.value; render();">
+      <div style="max-height:340px; overflow-y:auto; margin-top:10px;">
+        ${rows.length === 0 ? `<div class="empty">Mos konver topilmadi</div>` : rows.map(({ o, p }) => `
+          <div class="card" style="padding:10px; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <b>${o.id}</b> &middot; ${o.model} &middot; ${p.soni} dona
+                <div style="font-size:12px; color:#6B7280;">Hozir: ${getStageLabel(p.bosqich)} (${p.holat})</div>
+              </div>
+              <button class="secondary" style="padding:8px 10px; font-size:12px;" onclick="adminRevertPartiya('${o.id}','${p.pid}')">⬅ Qaytarish</button>
+            </div>
+          </div>`).join('')}
+      </div>
+      <div class="actions" style="margin-top:10px;">
+        <button class="secondary" style="width:100%" onclick="state.fixModal=null; render();">Yopish</button>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -967,6 +1308,11 @@ function renderAdminMenu() {
       <div class="title">${l.buyurtmalar}</div>
       <div class="sub">Tahrirlash va o'chirish</div>
     </div>
+    <div class="menu-card" onclick="switchTab('ombor_zaxira')">
+      <div class="icon">📦</div>
+      <div class="title">Tayyor mahsulot ombori</div>
+      <div class="sub">Zaxiradagi stullar ($)</div>
+    </div>
     <div class="menu-card" onclick="switchTab('statistika')">
       <div class="icon">📊</div>
       <div class="title">${l.statistika}</div>
@@ -985,10 +1331,43 @@ function renderAdminMenu() {
   </div>`;
 }
 
+function renderOmborMenu() {
+  const l = L();
+  return `
+  <h2 class="section-title">📦 OMBOR NAZORATI</h2>
+  <div class="admin-grid-menu">
+    <div class="menu-card" onclick="switchTab('ombor_qabul')">
+      <div class="icon">📥</div>
+      <div class="title">Qabul Qilish</div>
+      <div class="sub">I/CH dan kelgan stullar</div>
+    </div>
+    <div class="menu-card" onclick="state.manualKirimModal=true;render();">
+      <div class="icon">➕</div>
+      <div class="title">Kirim</div>
+      <div class="sub">Real TMO dan qo'shish</div>
+    </div>
+    <div class="menu-card" onclick="switchTab('ombor_zaxira')">
+      <div class="icon">🏬</div>
+      <div class="title">Tayyor mahsulot ombori</div>
+      <div class="sub">Zaxiradagi stullar ($)</div>
+    </div>
+    <div class="menu-card" onclick="switchTab('chiqimlar')">
+      <div class="icon">🚚</div>
+      <div class="title">Chiqim tarixi</div>
+      <div class="sub">Ombor chiqimlari</div>
+    </div>
+  </div>`;
+}
+
 function renderBackButton() {
   const l = L();
-  if (state.user && state.user.bolim === 'admin' && state.tab !== 'menu') {
-    return `<div class="back-btn" onclick="switchTab('menu')">${l.orqaga}</div>`;
+  if (!state.user) return '';
+  const isOmbor = state.user.bolim === 'ombor';
+  const isAdmin = state.user.bolim === 'admin';
+  const defaultTab = isAdmin ? 'menu' : (isOmbor ? 'ombor_menu' : 'ish');
+
+  if (state.tab !== defaultTab) {
+    return `<div class="back-btn" onclick="switchTab('${defaultTab}')">${l.orqaga}</div>`;
   }
   return '';
 }
@@ -998,13 +1377,15 @@ function renderDeptDashboard() {
   const isAdmin = bolim === 'admin';
 
   state.orders.forEach(o => {
-    o.partiyalar.forEach(p => {
-      if (isAdmin) {
-        if (p.holat !== 'tugadi') items.push({ o, p });
-      } else {
-        if (p.bosqich === bolim && p.holat !== 'tugadi') items.push({ o, p });
-      }
-    });
+    if (o.partiyalar) {
+      o.partiyalar.forEach(p => {
+        if (isAdmin) {
+          if (p.holat !== 'tugadi') items.push({ o, p });
+        } else {
+          if (p.bosqich === bolim && p.holat !== 'tugadi') items.push({ o, p });
+        }
+      });
+    }
   });
 
   items.sort((a, b) => (a.p.holat === 'jarayonda' ? 0 : 1) - (b.p.holat === 'jarayonda' ? 0 : 1));
@@ -1016,35 +1397,191 @@ function renderDeptDashboard() {
   `;
 }
 
-function renderOmborDashboard() {
+function renderOmborQabul() {
   const l = L(); const incoming = [];
   state.orders.forEach(o => {
-    o.partiyalar.forEach(p => { if (p.bosqich === 'ombor' && p.holat !== 'tugadi') incoming.push({ o, p }); });
+    if (o.partiyalar) {
+      o.partiyalar.forEach(p => { if (p.bosqich === 'ombor' && p.holat !== 'tugadi') incoming.push({ o, p }); });
+    }
   });
 
-  const zaxiraRows = Object.keys(state.ombor.zaxira)
-    .filter(key => state.ombor.zaxira[key] > 0)
-    .map(key => {
-      const parts = key.split('-'); const model = parts[0]; const color = parts.slice(1).join('-');
-      const count = state.ombor.zaxira[key];
-      return `<div class="list-row"><span><b>${model}</b> ${color ? colorBadge(color) : ''}</span><span class="mono"><b>${count}</b> ${l.dona}</span></div>`;
-    }).join('') || `<div class="empty">📦 ${l.hechNarsaYoq}</div>`;
+  return `
+  ${renderBackButton()}
+  <h2 class="section-title">📥 I/CH dan kelayotgan stullar</h2>
+  ${incoming.length === 0 ? `<div class="empty">📦 Kelayotgan yangi stullar yo'q</div>` : incoming.map(x => ticketCard(x.o, x.p, true)).join('')}
+  `;
+}
+
+function renderOmborZaxira() {
+  const l = L();
+  let totalStockCount = 0;
+  let totalStockMoney = 0;
+  const isOmborchi = state.user && state.user.bolim === 'ombor';
+  const isAdminView = state.user && state.user.bolim === 'admin';
+  const perModelMoney = {};
+
+  // Ishlab chiqarishda (zborka...qoplash, ombordan tashqari) hali yurgan
+  // stullarning narxini hisoblash — faqat adminga ko'rsatiladi.
+  // MUHIM: "Jarayondagi ishlar" ro'yxati bilan bir xil mezon ishlatiladi —
+  // faqat p.holat !== 'tugadi' bo'lgan partiyalar hisobga olinadi (bosqichi
+  // "ombor" bo'lmagan hollarda). Eski, allaqachon tugagan (tarixiy, holat:
+  // 'tugadi') partiyalar hisobga OLINMAYDI — aks holda tarixiy yozuvlar ham
+  // "hali jarayonda" deb hisoblanib, narx noto'g'ri ko'payib ketardi.
+  let ichTotalMoney = 0;
+  const perModelIch = {};
+  state.orders.forEach(o => {
+    const narx = parseFloat(o.narxBirlik) || 0;
+    if (narx <= 0) return;
+    let ichSoni = 0;
+    (o.partiyalar || []).forEach(p => {
+      if (p.bosqich !== 'ombor' && p.holat !== 'tugadi') ichSoni += (p.soni || 0);
+    });
+    if (ichSoni > 0) {
+      const qiymat = ichSoni * narx;
+      ichTotalMoney += qiymat;
+      perModelIch[o.model] = (perModelIch[o.model] || 0) + qiymat;
+    }
+  });
+
+  let stockKeys = Object.keys(state.ombor.zaxira).filter(k => {
+    const item = state.ombor.zaxira[k];
+    const count = typeof item === 'object' ? item.soni : (parseInt(item) || 0);
+    return count > 0;
+  });
+
+  // Filters calculation
+  if (state.stockFilterModel !== 'all') {
+    stockKeys = stockKeys.filter(k => k.split('-')[0] === state.stockFilterModel);
+  }
+  if (state.stockFilterColor !== 'all') {
+    stockKeys = stockKeys.filter(k => {
+      const parts = k.split('-');
+      const color = parts.slice(1).join('-');
+      return color === state.stockFilterColor;
+    });
+  }
+
+  const stockCards = stockKeys.map(key => {
+    const item = state.ombor.zaxira[key];
+    const count = typeof item === 'object' ? item.soni : (parseInt(item) || 0);
+    const price = typeof item === 'object' ? (parseFloat(item.narx) || 0) : 0;
+    const total = count * price;
+
+    totalStockCount += count;
+    totalStockMoney += total;
+
+    const parts = key.split('-'); const model = parts[0]; const color = parts.slice(1).join('-');
+    perModelMoney[model] = (perModelMoney[model] || 0) + total;
+
+    return `
+    <div class="stock-price-card">
+      <div>
+        <div class="st-title">🪑 ${model} ${color ? colorBadge(color) : ''}</div>
+        <div class="st-sub">Soni: <b>${count}</b> dona &middot; Narxi: <b>$${price}</b></div>
+      </div>
+      <div>
+        <div class="st-total">$${total.toLocaleString()}</div>
+        <div class="st-unit">Jami qiymat</div>
+        ${isOmborchi ? `<button class="edit-btn" style="margin-top:4px;padding:3px 8px;font-size:10px;" onclick="openEditStockModal('${key}')">✏️ Narx/Soni</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
 
   return `
-  <h2 class="section-title">${l.navbat}</h2>
-  ${incoming.length === 0 ? `<div class="empty">📦 ${l.hechNarsaYoq}</div>` : incoming.map(x => ticketCard(x.o, x.p, true)).join('')}
-  <h2 class="section-title">${l.zaxira}</h2>
-  <div class="card scrollable-card">${zaxiraRows}</div>
-  <button class="primary" style="width:100%;margin-bottom:14px;" onclick="state.dispatchModal=true;render();">${l.chiqimQilish}</button>
+  ${renderBackButton()}
+  
+  <div class="total-summary" style="background:#D1FAE5;border-color:#10B981;margin-bottom:12px;">
+    <div>
+      <span class="label" style="color:#065F46;">Jami stullar soni:</span>
+      <div style="font-size:12px;color:#047857;">Ombordagi tayyor zaxira</div>
+    </div>
+    <span class="number" style="color:#065F46;">${totalStockCount} dona</span>
+  </div>
+
+  ${isAdminView ? `
+  <div class="total-summary" style="background:#EFF6FF;border-color:#2563EB;margin-bottom:${state.showOmborSummaBreakdown ? '0' : '16px'};cursor:pointer;" onclick="state.showOmborSummaBreakdown=!state.showOmborSummaBreakdown;render();">
+    <div>
+      <span class="label" style="color:#1E40AF;">💵 Ombor Jami Qiymati ($):</span>
+      <div style="font-size:12px;color:#1D4ED8;">Barcha stullar summasi &middot; tarkibini ko'rish uchun bosing</div>
+    </div>
+    <span class="number" style="color:#1E40AF;">$${totalStockMoney.toLocaleString()}</span>
+  </div>
+  ${state.showOmborSummaBreakdown ? `
+  <div class="card" style="margin-bottom:16px;">
+    ${Object.keys(perModelMoney).sort().map(m => `
+      <div class="list-row" style="display:flex;justify-content:space-between;padding:6px 0;">
+        <span>${m}</span>
+        <span style="font-weight:700;color:#1E40AF;">$${perModelMoney[m].toLocaleString()}</span>
+      </div>`).join('') || `<div class="empty">Ma'lumot yo'q</div>`}
+  </div>` : ''}
+
+  <div class="total-summary" style="background:#FFF7ED;border-color:#EA580C;margin-bottom:${state.showIchSummaBreakdown ? '0' : '16px'};cursor:pointer;" onclick="state.showIchSummaBreakdown=!state.showIchSummaBreakdown;render();">
+    <div>
+      <span class="label" style="color:#9A3412;">🏭 I/CH dagi stullar narxi ($):</span>
+      <div style="font-size:12px;color:#C2410C;">Zborka-Qoplash oralig'ida jarayondagi stullar &middot; tarkibini ko'rish uchun bosing</div>
+    </div>
+    <span class="number" style="color:#9A3412;">$${ichTotalMoney.toLocaleString()}</span>
+  </div>
+  ${state.showIchSummaBreakdown ? `
+  <div class="card" style="margin-bottom:16px;">
+    ${Object.keys(perModelIch).sort().map(m => `
+      <div class="list-row" style="display:flex;justify-content:space-between;padding:6px 0;">
+        <span>${m}</span>
+        <span style="font-weight:700;color:#9A3412;">$${perModelIch[m].toLocaleString()}</span>
+      </div>`).join('') || `<div class="empty">Ma'lumot yo'q</div>`}
+  </div>` : ''}
+  ` : ''}
+
+  ${isOmborchi ? `
+  <div style="display:flex;gap:8px;margin-bottom:16px;">
+    <button class="primary" onclick="state.manualKirimModal=true;render();">➕ Kirim (real TMO dan kirim qilish)</button>
+    <button class="secondary" onclick="state.dispatchModal=true;render();">🚚 Chiqim Qilish</button>
+  </div>` : ''}
+
+  <!-- FILTRLAR -->
+  <div class="filter-box">
+    <div>
+      <label class="field-label">Fason bo'yicha:</label>
+      <select onchange="state.stockFilterModel=this.value;render();">
+        <option value="all" ${state.stockFilterModel==='all'?'selected':''}>Barcha Fasonlar</option>
+        ${MODELS.map(m => `<option value="${m}" ${state.stockFilterModel===m?'selected':''}>${m}</option>`).join('')}
+      </select>
+    </div>
+    <div>
+      <label class="field-label">Rang bo'yicha:</label>
+      <select onchange="state.stockFilterColor=this.value;render();">
+        <option value="all" ${state.stockFilterColor==='all'?'selected':''}>Barcha Ranglar</option>
+        ${COLORS.map(c => `<option value="${c}" ${state.stockFilterColor===c?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+
+  <h2 class="section-title">🏬 OMBORDAGI MAHSULOTLAR RO'YXATI</h2>
+  ${stockCards ? stockCards : `<div class="empty">📦 Omborda stul topilmadi</div>`}
   `;
 }
 
 function renderChiqimlar() {
   const l = L();
-  const list = state.ombor.chiqimlar || [];
+  let list = state.ombor.chiqimlar || [];
+  const isOmborchi = state.user && state.user.bolim === 'ombor';
 
-  const rows = list.length === 0 ? `<div class="empty">📦 Hali chiqim qilinmagan</div>` :
-  list.slice().reverse().map(c => `
+  // Filters calculation
+  if (state.chiqimFilterModel !== 'all') {
+    list = list.filter(c => c.modelKey.split('-')[0] === state.chiqimFilterModel);
+  }
+  if (state.chiqimFilterColor !== 'all') {
+    list = list.filter(c => {
+      const parts = c.modelKey.split('-');
+      const color = parts.slice(1).join('-');
+      return color === state.chiqimFilterColor;
+    });
+  }
+
+  const rows = list.length === 0 ? `<div class="empty">📦 Chiqimlar topilmadi</div>` :
+  list.slice().reverse().map((c, revIdx) => {
+    const originalIdx = list.length - 1 - revIdx;
+    return `
     <div class="card">
       <div class="row-between">
         <div>
@@ -1055,10 +1592,38 @@ function renderChiqimlar() {
       </div>
       <div class="time-text" style="margin-top:6px;">📅 ${formatDate(c.vaqt)}</div>
       ${c.izoh ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:4px;">📝 ${esc(c.izoh)}</div>` : ''}
-    </div>
-  `).join('');
+      
+      ${isOmborchi ? `
+      <div style="display:flex; gap:8px; margin-top:10px; border-top:1px dashed var(--line); padding-top:8px; justify-content:flex-end;">
+        <button class="edit-btn" onclick="openEditChiqimModal(${originalIdx})">✏️ Tahrirlash</button>
+        <button class="danger-btn" onclick="deleteChiqim(${originalIdx})">🗑️ O'chirish</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
 
-  return `${renderBackButton()}<h2 class="section-title">🚚 ${l.chiqimTarixi}</h2>${rows}`;
+  return `
+  ${renderBackButton()}
+  <h2 class="section-title">🚚 ${l.chiqimTarixi}</h2>
+
+  <!-- FILTRLAR -->
+  <div class="filter-box">
+    <div>
+      <label class="field-label">Fason bo'yicha:</label>
+      <select onchange="state.chiqimFilterModel=this.value;render();">
+        <option value="all" ${state.chiqimFilterModel==='all'?'selected':''}>Barcha Fasonlar</option>
+        ${MODELS.map(m => `<option value="${m}" ${state.chiqimFilterModel===m?'selected':''}>${m}</option>`).join('')}
+      </select>
+    </div>
+    <div>
+      <label class="field-label">Rang bo'yicha:</label>
+      <select onchange="state.chiqimFilterColor=this.value;render();">
+        <option value="all" ${state.chiqimFilterColor==='all'?'selected':''}>Barcha Ranglar</option>
+        ${COLORS.map(c => `<option value="${c}" ${state.chiqimFilterColor===c?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+
+  ${rows}`;
 }
 
 function renderYangiBuyurtma() {
@@ -1072,16 +1637,31 @@ function renderYangiBuyurtma() {
     <label class="field-label">${l.model}</label>
     <select id="fModel">${MODELS.map(m => `<option value="${m}">${m}</option>`).join('')}</select>
     <label class="field-label">${l.soni}</label>
-    <input id="fSoni" type="number" min="1" placeholder="12">
-    <button class="primary" style="width:100%" onclick="submitNewOrder()">${l.saqlash}</button>
+    <input id="fSoni" type="number" min="1" placeholder="12" oninput="updateYangiBuyurtmaJami()">
+    <label class="field-label">Bitta stul narxi ($)</label>
+    <input id="fNarx" type="number" min="0" step="0.01" placeholder="200" oninput="updateYangiBuyurtmaJami()">
+    <div id="fJamiSumma" style="font-weight:700; font-size:15px; color:#7C3AED; background:#F3E8FF; border-radius:8px; padding:10px 12px; margin-bottom:12px;">Jami summa: $0</div>
+    <button class="primary" id="btnSaqlashYangi" style="width:100%" onclick="submitNewOrder()">${l.saqlash}</button>
   </div>`;
 }
 
-function submitNewOrder() {
+function updateYangiBuyurtmaJami() {
+  const s = parseFloat(document.getElementById('fSoni').value) || 0;
+  const n = parseFloat(document.getElementById('fNarx').value) || 0;
+  const jamiEl = document.getElementById('fJamiSumma');
+  if (jamiEl) jamiEl.textContent = `Jami summa: $${(s * n).toLocaleString()}`;
+}
+
+async function submitNewOrder() {
   const k = document.getElementById('fKonver').value;
   const m = document.getElementById('fModel').value;
   const s = parseInt(document.getElementById('fSoni').value);
-  if (createOrder(k, m, s)) { switchTab('buyurtmalar'); }
+  const n = parseFloat(document.getElementById('fNarx').value) || 0;
+  const btn = document.getElementById('btnSaqlashYangi');
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  const ok = await createOrder(k, m, s, n);
+  if (btn) { btn.disabled = false; btn.textContent = L().saqlash; }
+  if (ok) { switchTab('buyurtmalar'); }
 }
 
 function renderBuyurtmalar() {
@@ -1090,10 +1670,37 @@ function renderBuyurtmalar() {
   
   const isAdmin = state.user.bolim === 'admin';
 
+  const fromDate = state.buyurtmaFrom ? new Date(state.buyurtmaFrom + 'T00:00:00') : null;
+  const toDate = state.buyurtmaTo ? new Date(state.buyurtmaTo + 'T23:59:59') : null;
+
+  const filteredOrders = state.orders.filter(o => {
+    const d = new Date(o.sana);
+    if (fromDate && d < fromDate) return false;
+    if (toDate && d > toDate) return false;
+    return true;
+  });
+
+  const dateFilterHtml = isAdmin ? `
+  <div class="card" style="margin-bottom:14px;">
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:130px;">
+        <label class="field-label">${l.sanaDan}</label>
+        <input type="date" value="${state.buyurtmaFrom || ''}" onchange="state.buyurtmaFrom=this.value;render();">
+      </div>
+      <div style="flex:1; min-width:130px;">
+        <label class="field-label">${l.sanaGacha}</label>
+        <input type="date" value="${state.buyurtmaTo || ''}" onchange="state.buyurtmaTo=this.value;render();">
+      </div>
+    </div>
+    ${(state.buyurtmaFrom || state.buyurtmaTo) ? `<button class="secondary" style="width:100%; margin-top:8px;" onclick="state.buyurtmaFrom='';state.buyurtmaTo='';render();">✕ Filtrni tozalash</button>` : ''}
+  </div>` : '';
+
   return `
   ${renderBackButton()}
-  <h2 class="section-title">📝 ${l.buyurtmalar}</h2>
-  ${state.orders.slice().reverse().map(o => {
+  <h2 class="section-title">📝 ${l.buyurtmalar} ${isAdmin ? `<span style="font-weight:400; font-size:13px; color:var(--muted);">(${filteredOrders.length}/${state.orders.length})</span>` : ''}</h2>
+  ${dateFilterHtml}
+  ${filteredOrders.length === 0 ? `<div class="empty">📋 ${l.hechNarsaYoq}</div>` : ''}
+  ${filteredOrders.slice().reverse().map(o => {
     const stages = o.partiyalar.map(p => `${getStageLabel(p.bosqich)} (${p.soni}${p.rang ? ' - ' + p.rang : ''})`).join(', ');
     return `
     <div class="card">
@@ -1106,6 +1713,7 @@ function renderBuyurtmalar() {
           </div>
           <div class="time-text" style="margin-top:4px;"><b>${l.buyurtmaVaqti}:</b> ${formatDate(o.sana)}</div>
           <div class="meta" style="margin-top:4px;">${stages}</div>
+          ${isAdmin && o.narxBirlik ? `<div style="margin-top:6px; font-weight:700; color:#7C3AED; background:#F3E8FF; display:inline-block; padding:3px 10px; border-radius:100px; font-size:12px;">💵 $${o.narxBirlik}/dona &middot; Jami: $${(o.narxBirlik * o.jamiSoni).toLocaleString()}</div>` : ''}
         </div>
       </div>
       ${isAdmin ? `
@@ -1120,14 +1728,14 @@ function renderBuyurtmalar() {
 function openEditModal(konverId) {
   const o = findOrder(konverId);
   if (!o) return;
-  state.editModal = { konverId: o.id, model: o.model, jamiSoni: o.jamiSoni };
+  state.editModal = { konverId: o.id, model: o.model, jamiSoni: o.jamiSoni, narxBirlik: o.narxBirlik || 0 };
   render();
 }
 
 function renderEditModal() {
   if (!state.editModal) return '';
   const l = L();
-  const { konverId, model, jamiSoni } = state.editModal;
+  const { konverId, model, jamiSoni, narxBirlik } = state.editModal;
 
   return `
   <div class="modal-overlay">
@@ -1146,9 +1754,12 @@ function renderEditModal() {
       <label class="field-label">${l.soni}</label>
       <input id="editSoni" type="number" min="1" value="${jamiSoni}">
 
+      <label class="field-label">Bitta stul narxi ($)</label>
+      <input id="editNarx" type="number" min="0" step="0.01" value="${narxBirlik}">
+
       <div class="modal-actions">
         <button class="secondary" onclick="state.editModal=null;render();">${l.bekor}</button>
-        <button class="primary" onclick="editOrder('${konverId}', document.getElementById('editKonver').value, document.getElementById('editModel').value, parseInt(document.getElementById('editSoni').value))">${l.saqlash}</button>
+        <button class="primary" onclick="editOrder('${konverId}', document.getElementById('editKonver').value, document.getElementById('editModel').value, parseInt(document.getElementById('editSoni').value), parseFloat(document.getElementById('editNarx').value)||0)">${l.saqlash}</button>
       </div>
     </div>
   </div>`;
@@ -1226,7 +1837,11 @@ function renderStatistika() {
   ` : `<div class="empty">${l.hechNarsaYoq}</div>`;
 
   let omborRealCount = 0;
-  Object.keys(state.ombor.zaxira).forEach(k => { omborRealCount += (state.ombor.zaxira[k] || 0); });
+  Object.keys(state.ombor.zaxira).forEach(k => {
+    const item = state.ombor.zaxira[k];
+    const count = typeof item === 'object' ? item.soni : (parseInt(item) || 0);
+    omborRealCount += count;
+  });
 
   let jamiChiqimSoni = 0;
   if (state.ombor.chiqimlar && Array.isArray(state.ombor.chiqimlar)) {
@@ -1398,26 +2013,121 @@ function renderSplitModal() {
   </div>`;
 }
 
+function renderManualKirimModal() {
+  if (!state.manualKirimModal) return '';
+  const l = L();
+  return `
+  <div class="modal-overlay">
+    <div class="modal">
+      <h3>➕ Kirim (real TMO dan kirim qilish)</h3>
+      <p>Skladdagi bor stullarni kiriting:</p>
+
+      <label class="field-label">Stul turi</label>
+      <select id="mModel">${MODELS.map(m => `<option value="${m}">${m}</option>`).join('')}</select>
+
+      <label class="field-label">Rang</label>
+      <select id="mRang">${COLORS.map(c => `<option value="${c}">${c}</option>`).join('')}</select>
+
+      <label class="field-label">${l.soni}</label>
+      <input id="mSoni" type="number" min="1" placeholder="Soni" oninput="calcManualTotal()">
+
+      <label class="field-label">${l.narxi || 'Dona narxi ($)'}</label>
+      <input id="mNarx" type="number" min="0" placeholder="Dona narxi ($)" oninput="calcManualTotal()">
+
+      <div class="total-summary" style="margin-bottom:12px;background:#F0FDF4;border-color:#10B981;">
+        <span class="label" style="color:#047857;">Jami Summasi:</span>
+        <span class="number" id="mTotalLabel" style="color:#047857;">$0</span>
+      </div>
+
+      <div class="modal-actions">
+        <button class="secondary" onclick="state.manualKirimModal=false;render();">${l.bekor}</button>
+        <button class="primary" onclick="addManualStock(document.getElementById('mModel').value, document.getElementById('mRang').value, document.getElementById('mSoni').value, document.getElementById('mNarx').value)">Saqlash</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function calcManualTotal() {
+  const s = parseFloat(document.getElementById('mSoni').value) || 0;
+  const n = parseFloat(document.getElementById('mNarx').value) || 0;
+  const lbl = document.getElementById('mTotalLabel');
+  if (lbl) lbl.innerText = '$' + (s * n).toLocaleString();
+}
+
+function openEditStockModal(key) {
+  const item = state.ombor.zaxira[key];
+  const count = typeof item === 'object' ? item.soni : (parseInt(item) || 0);
+  const price = typeof item === 'object' ? (parseFloat(item.narx) || 0) : 0;
+  state.editStockModal = { key, count, price };
+  render();
+}
+
+function renderEditStockModal() {
+  if (!state.editStockModal) return '';
+  const { key, count, price } = state.editStockModal;
+  return `
+  <div class="modal-overlay">
+    <div class="modal">
+      <h3>✏️ Zaxirani Tahrirlash</h3>
+      <p>Model: <b>${key}</b></p>
+
+      <label class="field-label">Soni (dona)</label>
+      <input id="esSoni" type="number" value="${count}">
+
+      <label class="field-label">Dona narxi ($)</label>
+      <input id="esNarx" type="number" value="${price}">
+
+      <div class="modal-actions">
+        <button class="secondary" onclick="state.editStockModal=null;render();">Bekor qilish</button>
+        <button class="primary" onclick="updateStockDetails('${key}', document.getElementById('esSoni').value, document.getElementById('esNarx').value)">Saqlash</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderEditChiqimModal() {
+  if (!state.editChiqimModal) return '';
+  const { index, modelKey, soni, izoh } = state.editChiqimModal;
+  return `
+  <div class="modal-overlay">
+    <div class="modal">
+      <h3>✏️ Chiqimni Tahrirlash</h3>
+      <p>Mahsulot: <b>${modelKey}</b></p>
+
+      <label class="field-label">Yangi Soni (dona)</label>
+      <input id="ecSoni" type="number" min="1" value="${soni}">
+
+      <label class="field-label">Izoh</label>
+      <input id="ecIzoh" value="${esc(izoh)}">
+
+      <div class="modal-actions">
+        <button class="secondary" onclick="state.editChiqimModal=null;render();">Bekor qilish</button>
+        <button class="primary" onclick="saveEditChiqim(${index}, document.getElementById('ecSoni').value, document.getElementById('ecIzoh').value)">Saqlash</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderDispatchModal() {
   if (!state.dispatchModal) return '';
   const l = L();
   const stockOptions = Object.keys(state.ombor.zaxira)
-    .filter(k => state.ombor.zaxira[k] > 0)
-    .map(k => `<option value="${k}">${k} (${state.ombor.zaxira[k]} ${l.dona})</option>`).join('');
-
-  const konverOptions = state.orders.map(o => `<option value="${o.id}">${o.id} - ${o.model}</option>`).join('');
+    .filter(k => {
+      const item = state.ombor.zaxira[k];
+      const count = typeof item === 'object' ? item.soni : (parseInt(item) || 0);
+      return count > 0;
+    })
+    .map(k => {
+      const item = state.ombor.zaxira[k];
+      const count = typeof item === 'object' ? item.soni : (parseInt(item) || 0);
+      return `<option value="${k}">${k} (${count} dona)</option>`;
+    }).join('');
 
   return `
   <div class="modal-overlay">
     <div class="modal">
-      <h3>${l.chiqimQilish}</h3>
+      <h3>🚚 ${l.chiqimQilish}</h3>
       ${stockOptions ? `
-        <label class="field-label">${l.konverRaqami}</label>
-        <select id="dKonver">
-          <option value="-">Tanlanmagan / Boshqa</option>
-          ${konverOptions}
-        </select>
-
         <label class="field-label">${l.model}</label>
         <select id="dModel">${stockOptions}</select>
 
@@ -1429,7 +2139,7 @@ function renderDispatchModal() {
 
         <div class="modal-actions">
           <button class="secondary" onclick="state.dispatchModal=false;render();">${l.bekor}</button>
-          <button class="primary" onclick="dispatchStock(document.getElementById('dModel').value, document.getElementById('dKonver').value, document.getElementById('dSoni').value, document.getElementById('dIzoh').value)">${l.tasdiqlash}</button>
+          <button class="primary" onclick="dispatchStock(document.getElementById('dModel').value, '-', document.getElementById('dSoni').value, document.getElementById('dIzoh').value)">${l.tasdiqlash}</button>
         </div>
       ` : `<p>Omborda zaxira yo'q</p><button class="secondary" style="width:100%" onclick="state.dispatchModal=false;render();">${l.yopish}</button>`}
     </div>
@@ -1465,25 +2175,26 @@ function render() {
     if (state.tab === 'menu') content = renderAdminMenu();
     else if (state.tab === 'yangi') content = renderYangiBuyurtma();
     else if (state.tab === 'buyurtmalar') content = renderBuyurtmalar();
+    else if (state.tab === 'ombor_zaxira') content = renderOmborZaxira();
     else if (state.tab === 'statistika') content = renderStatistika();
     else if (state.tab === 'vaqt') content = renderVaqtHisoboti();
     else if (state.tab === 'chiqimlar') content = renderChiqimlar();
     else content = renderDeptDashboard();
   } else if (state.user.bolim === 'ombor') {
-    if (state.tab === 'chiqimlar') content = renderChiqimlar();
-    else if (state.tab === 'statistika') content = renderStatistika();
-    else content = renderOmborDashboard();
+    if (state.tab === 'ombor_menu') content = renderOmborMenu();
+    else if (state.tab === 'ombor_qabul') content = renderOmborQabul();
+    else if (state.tab === 'ombor_zaxira') content = renderOmborZaxira();
+    else if (state.tab === 'chiqimlar') content = renderChiqimlar();
+    else content = renderOmborMenu();
   } else {
     if (state.tab === 'statistika') content = renderStatistika();
     else content = renderDeptDashboard();
   }
 
   let nonAdminTabs = '';
-  if (state.user.bolim !== 'admin') {
+  if (state.user.bolim !== 'admin' && state.user.bolim !== 'ombor') {
     const l = L();
-    const tabs = state.user.bolim === 'ombor' 
-      ? [['ombor', l.ombor], ['chiqimlar', l.chiqimTarixi], ['statistika', l.statistika]]
-      : [['ish', l.navbat], ['statistika', l.statistika]];
+    const tabs = [['ish', l.navbat], ['statistika', l.statistika]];
 
     nonAdminTabs = `
     <div style="display:flex;gap:8px;margin-bottom:16px;overflow-x:auto;">
@@ -1503,16 +2214,27 @@ function render() {
     ${renderDoneModal()}
     ${renderColorModal()}
     ${renderSplitModal()}
+    ${renderFixModal()}
     ${renderDispatchModal()}
+    ${renderManualKirimModal()}
+    ${renderEditStockModal()}
+    ${renderEditChiqimModal()}
     ${renderHistoryModal()}
     ${renderEditModal()}
+    ${pendingPushes > 0 ? `
+    <div style="position:fixed; inset:0; background:rgba(15,23,42,0.35); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999; gap:12px;">
+      <div style="width:46px; height:46px; border:4px solid rgba(255,255,255,0.35); border-top-color:#fff; border-radius:50%; animation:saqlanmoqda-spin 0.8s linear infinite;"></div>
+      <div style="color:#fff; font-weight:700; font-size:14px; background:rgba(0,0,0,0.25); padding:6px 14px; border-radius:100px;">Saqlanmoqda...</div>
+    </div>
+    <style>@keyframes saqlanmoqda-spin { to { transform: rotate(360deg); } }</style>
+    ` : ''}
   `;
 }
 
 function appHandleBack(){
   try{
     if(state.user){
-      const def = state.user.bolim === 'admin' ? 'menu' : (state.user.bolim === 'ombor' ? 'ombor' : 'ish');
+      const def = state.user.bolim === 'admin' ? 'menu' : (state.user.bolim === 'ombor' ? 'ombor_menu' : 'ish');
       if(state.tab !== def){
         state.tab = def;
         render();
