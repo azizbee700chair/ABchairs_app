@@ -307,7 +307,8 @@ let state = {
   showFasonStat: false, showKonverStat: true,
   stockFilterModel: 'all', stockFilterColor: 'all',
   chiqimFilterModel: 'all', chiqimFilterColor: 'all', showOmborSummaBreakdown: false, showIchSummaBreakdown: false,
-  buyurtmaFrom: '', buyurtmaTo: ''
+  buyurtmaFrom: '', buyurtmaTo: '', pricesRevealed: false, stockListCollapsed: true,
+  chiqimFrom: '', chiqimTo: '', showChiqimSummaBreakdown: false, chiqimListCollapsed: true
 };
 
 function L() { return T[state.lang] || T.uz; }
@@ -811,7 +812,8 @@ function confirmDone(rawVal) {
       holat: 'kutilmoqda',
       rang: p.rang || null,
       qabulVaqti: null,
-      tugashVaqti: null
+      tugashVaqti: null,
+      parentPid: p.pid
     });
   }
 
@@ -889,7 +891,8 @@ function confirmSplit(susalRaw) {
       holat: 'kutilmoqda', 
       rang: colorName, 
       qabulVaqti: null, 
-      tugashVaqti: null
+      tugashVaqti: null,
+      parentPid: pRef.pid
     });
   }
 
@@ -903,7 +906,8 @@ function confirmSplit(susalRaw) {
       holat: 'kutilmoqda', 
       rang: colorName, 
       qabulVaqti: null, 
-      tugashVaqti: null
+      tugashVaqti: null,
+      parentPid: pRef.pid
     });
   }
 
@@ -972,11 +976,24 @@ function updateStockDetails(key, newSoni, newNarx) {
   render();
 }
 
+function tryRevealPrices() {
+  const pwd = prompt('Narxlarni ko\'rish uchun admin parolini kiriting:');
+  if (pwd === null) return;
+  const adminUser = USERS.find(u => u.bolim === 'admin');
+  if (adminUser && pwd === adminUser.parol) {
+    state.pricesRevealed = true;
+    render();
+  } else {
+    alert('Parol noto\'g\'ri');
+  }
+}
+
 function dispatchStock(key, selectedKonver, soni, izoh) {
   soni = parseInt(soni) || 0; if (soni <= 0) return;
   
   let currentObj = state.ombor.zaxira[key];
   let currentQty = typeof currentObj === 'object' ? currentObj.soni : (parseInt(currentObj) || 0);
+  let narxBirlik = typeof currentObj === 'object' ? (parseFloat(currentObj.narx) || 0) : 0;
 
   if (soni > currentQty) { alert('Omborda yetarli zaxira yo\'q!'); return; }
   
@@ -995,7 +1012,9 @@ function dispatchStock(key, selectedKonver, soni, izoh) {
     konver: selectedKonver || '-',
     modelKey: key,
     soni,
-    izoh
+    izoh,
+    narxBirlik,
+    jamiSumma: narxBirlik * soni
   });
 
   saveOmbor(); log('ombor', 'chiqim qildi', selectedKonver || '-', key, soni, izoh);
@@ -1272,14 +1291,41 @@ function checkFixPassword() {
 function adminRevertPartiya(konverId, pid) {
   const o = findOrder(konverId); if (!o) return;
   const p = o.partiyalar.find(x => x.pid === pid); if (!p) return;
+
   const oldBosqich = p.bosqich;
-  const targetBosqich = state.user.bolim;
+  const idx = STAGE_SEQ.indexOf(oldBosqich);
+
+  if (idx <= 0) {
+    alert(`Bu bo'lak allaqachon birinchi bosqichda (${getStageLabel(oldBosqich)}) — orqaga qaytarib bo'lmaydi.`);
+    return;
+  }
+  if (oldBosqich === 'ombor' && p.holat === 'tugadi') {
+    alert('Bu bo\'lak allaqachon tayyor mahsulot omboriga kirim qilingan. Uni qaytarish uchun avval ombor zaxirasidan ayirish kerak — bu funksiya hozircha qo\'llab-quvvatlanmaydi.');
+    return;
+  }
+
+  // MUHIM: konver hozir QAYSI bo'limda turgan bo'lsa, shundan BIR BOSQICH
+  // ORQAGA qaytariladi — bu tugmani qaysi bo'lim ekranidan (yoki admin
+  // tomonidan) ochishidan qat'iy nazar, natija bir xil bo'ladi.
+  const targetBosqich = STAGE_SEQ[idx - 1];
+
   if (!confirm(`"${konverId}" (${o.model}, ${p.soni} dona) ${getStageLabel(oldBosqich)}dan ${getStageLabel(targetBosqich)}ga qaytarilsinmi?`)) return;
 
   p.bosqich = targetBosqich;
-  p.holat = 'kutilmoqda';
+  p.holat = 'kutilmoqda'; // "Qabul qildim" bosilishini kutadigan holatga qaytadi
   p.qabulVaqti = null;
   p.tugashVaqti = null;
+
+  // MUHIM: bu bo'lak avval qaysi "tugadi" (tarixiy) yozuvdan hosil bo'lgan
+  // bo'lsa, o'sha yozuvni endi o'chiramiz — aks holda statistikada
+  // "tugallangan" soni ikki (yoki undan ko'p) marta hisoblanib qolar edi,
+  // chunki eski yozuv ortda, o'chirilmagan holda qolib ketardi.
+  if (p.parentPid) {
+    const parentIdx = o.partiyalar.findIndex(x => x.pid === p.parentPid && x.holat === 'tugadi');
+    if (parentIdx !== -1) {
+      o.partiyalar.splice(parentIdx, 1);
+    }
+  }
   log(targetBosqich, 'admin tomonidan qaytarildi', konverId, o.model, p.soni, `${getStageLabel(oldBosqich)}dan qaytarildi`);
   recomputeHolat(o);
   saveOrders();
@@ -1296,7 +1342,7 @@ function renderFixModal() {
     <div class="modal-overlay">
       <div class="modal">
         <h3>🛠 Tuzatish — Admin paroli</h3>
-        <p>Xato yopilgan konverni "${getStageLabel(myBolim)}" bo'limiga qaytarish uchun admin parolini kiriting.</p>
+        <p>Xato yopilgan konverni bir bosqich orqaga qaytarish uchun admin parolini kiriting.</p>
         <input id="fixPwdInput" type="password" placeholder="Admin paroli" onkeydown="if(event.key==='Enter') checkFixPassword();">
         <div class="actions">
           <button class="secondary" onclick="state.fixModal=null; render();">Bekor qilish</button>
@@ -1306,13 +1352,14 @@ function renderFixModal() {
     </div>`;
   }
 
-  // step === 'list'
+  // step === 'list' — endi "hozirgi bo'limga" emas, "bir bosqich orqaga"
+  // qaytarish mantig'i ishlagani uchun, ro'yxat butun tizim bo'yicha ko'rsatiladi
   const search = (state.fixModal.search || '').toLowerCase();
   const rows = [];
   state.orders.forEach(o => {
     o.partiyalar.forEach(p => {
-      if (p.holat === 'tugadi' && p.bosqich !== myBolim) return; // faqat mazmunli (hali yakunlanmagan yoki boshqa joyda) partiyalar
-      if (p.bosqich === myBolim && p.holat === 'kutilmoqda') return; // allaqachon shu yerda kutayotganlar kerak emas
+      if (STAGE_SEQ.indexOf(p.bosqich) <= 0 && p.holat === 'kutilmoqda') return; // zborkada hali boshlanmagan - qaytarishga hojat yo'q
+      if (p.bosqich === 'ombor' && p.holat === 'tugadi') return; // omborga kirim bo'lgan - hozircha qo'llab-quvvatlanmaydi
       if (search && !o.id.toLowerCase().includes(search) && !o.model.toLowerCase().includes(search)) return;
       rows.push({ o, p });
     });
@@ -1321,8 +1368,8 @@ function renderFixModal() {
   return `
   <div class="modal-overlay">
     <div class="modal" style="max-width:420px;">
-      <h3>🛠 Konverni qaytarish</h3>
-      <p>Ro'yxatdan konverni topib, "${getStageLabel(myBolim)}"ga qaytaring.</p>
+      <h3>🛠 Konverni bir bosqich orqaga qaytarish</h3>
+      <p>Ro'yxatdan konverni topib, oldingi bosqichga qaytaring.</p>
       <input placeholder="Konver yoki fason bo'yicha qidirish..." value="${state.fixModal.search || ''}" oninput="state.fixModal.search=this.value; render();">
       <div style="max-height:340px; overflow-y:auto; margin-top:10px;">
         ${rows.length === 0 ? `<div class="empty">Mos konver topilmadi</div>` : rows.map(({ o, p }) => `
@@ -1330,7 +1377,7 @@ function renderFixModal() {
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <div>
                 <b>${o.id}</b> &middot; ${o.model} &middot; ${p.soni} dona
-                <div style="font-size:12px; color:#6B7280;">Hozir: ${getStageLabel(p.bosqich)} (${p.holat})</div>
+                <div style="font-size:12px; color:#6B7280;">Hozir: ${getStageLabel(p.bosqich)} (${p.holat}) &rarr; ${getStageLabel(STAGE_SEQ[STAGE_SEQ.indexOf(p.bosqich)-1] || '-')}ga qaytadi</div>
               </div>
               <button class="secondary" style="padding:8px 10px; font-size:12px;" onclick="adminRevertPartiya('${o.id}','${p.pid}')">⬅ Qaytarish</button>
             </div>
@@ -1528,14 +1575,24 @@ function renderOmborZaxira() {
     const parts = key.split('-'); const model = parts[0]; const color = parts.slice(1).join('-');
     perModelMoney[model] = (perModelMoney[model] || 0) + total;
 
+    // Omborchiga narx ko'rinmasin (shtrixlangan) — faqat admin parolini
+    // kiritib "ochgandan" keyingina, yoki admin bo'lsa har doim ko'rinadi.
+    const showPrice = isAdminView || state.pricesRevealed;
+    const priceHtml = showPrice
+      ? `Narxi: <b>$${price}</b>`
+      : `Narxi: <span onclick="tryRevealPrices()" style="filter:blur(4px); cursor:pointer; user-select:none;">$${price}</span> <span onclick="tryRevealPrices()" style="cursor:pointer;">🔒</span>`;
+    const totalHtml = showPrice
+      ? `$${total.toLocaleString()}`
+      : `<span onclick="tryRevealPrices()" style="filter:blur(5px); cursor:pointer; user-select:none;">$${total.toLocaleString()}</span>`;
+
     return `
     <div class="stock-price-card">
       <div>
         <div class="st-title">🪑 ${model} ${color ? colorBadge(color) : ''}</div>
-        <div class="st-sub">Soni: <b>${count}</b> dona &middot; Narxi: <b>$${price}</b></div>
+        <div class="st-sub">Soni: <b>${count}</b> dona &middot; ${priceHtml}</div>
       </div>
       <div>
-        <div class="st-total">$${total.toLocaleString()}</div>
+        <div class="st-total">${totalHtml}</div>
         <div class="st-unit">Jami qiymat</div>
         ${isOmborchi ? `<button class="edit-btn" style="margin-top:4px;padding:3px 8px;font-size:10px;" onclick="openEditStockModal('${key}')">✏️ Narx/Soni</button>` : ''}
       </div>
@@ -1611,8 +1668,11 @@ function renderOmborZaxira() {
     </div>
   </div>
 
-  <h2 class="section-title">🏬 OMBORDAGI MAHSULOTLAR RO'YXATI</h2>
-  ${stockCards ? stockCards : `<div class="empty">📦 Omborda stul topilmadi</div>`}
+  <h2 class="section-title" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;" onclick="state.stockListCollapsed=!state.stockListCollapsed;render();">
+    <span>🏬 OMBORDAGI MAHSULOTLAR RO'YXATI (${stockKeys.length})</span>
+    <span>${state.stockListCollapsed ? '▼' : '▲'}</span>
+  </h2>
+  ${state.stockListCollapsed ? '' : (stockCards ? stockCards : `<div class="empty">📦 Omborda stul topilmadi</div>`)}
   `;
 }
 
@@ -1620,6 +1680,7 @@ function renderChiqimlar() {
   const l = L();
   let list = state.ombor.chiqimlar || [];
   const isOmborchi = state.user && state.user.bolim === 'ombor';
+  const isAdminChiqim = state.user && state.user.bolim === 'admin';
 
   // Filters calculation
   if (state.chiqimFilterModel !== 'all') {
@@ -1632,6 +1693,28 @@ function renderChiqimlar() {
       return color === state.chiqimFilterColor;
     });
   }
+  const chiqimFromDate = state.chiqimFrom ? new Date(state.chiqimFrom + 'T00:00:00') : null;
+  const chiqimToDate = state.chiqimTo ? new Date(state.chiqimTo + 'T23:59:59') : null;
+  if (chiqimFromDate || chiqimToDate) {
+    list = list.filter(c => {
+      const d = new Date(c.vaqt);
+      if (chiqimFromDate && d < chiqimFromDate) return false;
+      if (chiqimToDate && d > chiqimToDate) return false;
+      return true;
+    });
+  }
+
+  // Umumiy soni va narxi (faqat filtrlangan ro'yxat bo'yicha)
+  let totalChiqimSoni = 0;
+  let totalChiqimNarxi = 0;
+  const perModelChiqimNarxi = {};
+  list.forEach(c => {
+    totalChiqimSoni += (c.soni || 0);
+    const summa = c.jamiSumma || 0;
+    totalChiqimNarxi += summa;
+    const model = (c.modelKey || '').split('-')[0];
+    perModelChiqimNarxi[model] = (perModelChiqimNarxi[model] || 0) + summa;
+  });
 
   const rows = list.length === 0 ? `<div class="empty">📦 Chiqimlar topilmadi</div>` :
   list.slice().reverse().map((c, revIdx) => {
@@ -1647,6 +1730,7 @@ function renderChiqimlar() {
       </div>
       <div class="time-text" style="margin-top:6px;">📅 ${formatDate(c.vaqt)}</div>
       ${c.izoh ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:4px;">📝 ${esc(c.izoh)}</div>` : ''}
+      ${isAdminChiqim && c.jamiSumma ? `<div style="margin-top:6px; font-weight:700; color:#7C3AED; background:#F3E8FF; display:inline-block; padding:3px 10px; border-radius:100px; font-size:12px;">💵 $${(c.narxBirlik||0).toLocaleString()}/dona &middot; Jami: $${(c.jamiSumma||0).toLocaleString()}</div>` : ''}
       
       ${isOmborchi ? `
       <div style="display:flex; gap:8px; margin-top:10px; border-top:1px dashed var(--line); padding-top:8px; justify-content:flex-end;">
@@ -1659,6 +1743,46 @@ function renderChiqimlar() {
   return `
   ${renderBackButton()}
   <h2 class="section-title">🚚 ${l.chiqimTarixi}</h2>
+
+  <!-- SANA FILTRI -->
+  <div class="card" style="margin-bottom:14px;">
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:130px;">
+        <label class="field-label">${l.sanaDan}</label>
+        <input type="date" value="${state.chiqimFrom || ''}" onchange="state.chiqimFrom=this.value;render();">
+      </div>
+      <div style="flex:1; min-width:130px;">
+        <label class="field-label">${l.sanaGacha}</label>
+        <input type="date" value="${state.chiqimTo || ''}" onchange="state.chiqimTo=this.value;render();">
+      </div>
+    </div>
+    ${(state.chiqimFrom || state.chiqimTo) ? `<button class="secondary" style="width:100%; margin-top:8px;" onclick="state.chiqimFrom='';state.chiqimTo='';render();">✕ Sana filtrini tozalash</button>` : ''}
+  </div>
+
+  <div class="total-summary" style="background:#ECFDF5;border-color:#059669;margin-bottom:14px;">
+    <div>
+      <span class="label" style="color:#065F46;">📦 Jami chiqim soni:</span>
+    </div>
+    <span class="number" style="color:#065F46;">${totalChiqimSoni} ${l.dona}</span>
+  </div>
+
+  ${isAdminChiqim ? `
+  <div class="total-summary" style="background:#EFF6FF;border-color:#2563EB;margin-bottom:${state.showChiqimSummaBreakdown ? '0' : '14px'};cursor:pointer;" onclick="state.showChiqimSummaBreakdown=!state.showChiqimSummaBreakdown;render();">
+    <div>
+      <span class="label" style="color:#1E40AF;">💵 Umumiy chiqim narxi ($):</span>
+      <div style="font-size:12px;color:#1D4ED8;">Tarkibini ko'rish uchun bosing</div>
+    </div>
+    <span class="number" style="color:#1E40AF;">$${totalChiqimNarxi.toLocaleString()}</span>
+  </div>
+  ${state.showChiqimSummaBreakdown ? `
+  <div class="card" style="margin-bottom:14px;">
+    ${Object.keys(perModelChiqimNarxi).sort().map(m => `
+      <div class="list-row" style="display:flex;justify-content:space-between;padding:6px 0;">
+        <span>${m}</span>
+        <span style="font-weight:700;color:#1E40AF;">$${perModelChiqimNarxi[m].toLocaleString()}</span>
+      </div>`).join('') || `<div class="empty">Ma'lumot yo'q</div>`}
+  </div>` : ''}
+  ` : ''}
 
   <!-- FILTRLAR -->
   <div class="filter-box">
@@ -1678,7 +1802,11 @@ function renderChiqimlar() {
     </div>
   </div>
 
-  ${rows}`;
+  <h2 class="section-title" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;" onclick="state.chiqimListCollapsed=!state.chiqimListCollapsed;render();">
+    <span>📋 CHIQIMLAR RO'YXATI (${list.length})</span>
+    <span>${state.chiqimListCollapsed ? '▼' : '▲'}</span>
+  </h2>
+  ${state.chiqimListCollapsed ? '' : rows}`;
 }
 
 function renderYangiBuyurtma() {
@@ -1871,6 +1999,8 @@ function renderStatistika() {
       }
     });
   });
+
+  konverRows.sort((a, b) => a.konver.localeCompare(b.konver, undefined, { numeric: true, sensitivity: 'base' }));
 
   const doneRows = Object.keys(perModelDone).map(m =>
     `<div class="list-row"><span><b>${m}</b></span><span class="mono"><b>${perModelDone[m]}</b> ${l.dona}</span></div>`
