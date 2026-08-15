@@ -308,8 +308,7 @@ let state = {
   stockFilterModel: 'all', stockFilterColor: 'all',
   chiqimFilterModel: 'all', chiqimFilterColor: 'all', showOmborSummaBreakdown: false, showIchSummaBreakdown: false,
   buyurtmaFrom: '', buyurtmaTo: '', pricesRevealed: false, stockListCollapsed: true,
-  chiqimFrom: '', chiqimTo: '', showChiqimSummaBreakdown: false, chiqimListCollapsed: true,
-  showOmborSoniBreakdown: false, showChiqimSoniBreakdown: false
+  chiqimFrom: '', chiqimTo: '', showChiqimSummaBreakdown: false, chiqimListCollapsed: true
 };
 
 function L() { return T[state.lang] || T.uz; }
@@ -1522,7 +1521,6 @@ function renderOmborZaxira() {
   const isOmborchi = state.user && state.user.bolim === 'ombor';
   const isAdminView = state.user && state.user.bolim === 'admin';
   const perModelMoney = {};
-  const perModelCount = {};
 
   // Ishlab chiqarishda (zborka...qoplash, ombordan tashqari) hali yurgan
   // stullarning narxini hisoblash — faqat adminga ko'rsatiladi.
@@ -1576,7 +1574,6 @@ function renderOmborZaxira() {
 
     const parts = key.split('-'); const model = parts[0]; const color = parts.slice(1).join('-');
     perModelMoney[model] = (perModelMoney[model] || 0) + total;
-    perModelCount[model] = (perModelCount[model] || 0) + count;
 
     // Omborchiga narx ko'rinmasin (shtrixlangan) — faqat admin parolini
     // kiritib "ochgandan" keyingina, yoki admin bo'lsa har doim ko'rinadi.
@@ -1605,21 +1602,13 @@ function renderOmborZaxira() {
   return `
   ${renderBackButton()}
   
-  <div class="total-summary" style="background:#D1FAE5;border-color:#10B981;margin-bottom:${state.showOmborSoniBreakdown ? '0' : '12px'};cursor:pointer;" onclick="state.showOmborSoniBreakdown=!state.showOmborSoniBreakdown;render();">
+  <div class="total-summary" style="background:#D1FAE5;border-color:#10B981;margin-bottom:12px;">
     <div>
       <span class="label" style="color:#065F46;">Jami stullar soni:</span>
-      <div style="font-size:12px;color:#047857;">Ombordagi tayyor zaxira &middot; tarkibini ko'rish uchun bosing</div>
+      <div style="font-size:12px;color:#047857;">Ombordagi tayyor zaxira</div>
     </div>
     <span class="number" style="color:#065F46;">${totalStockCount} dona</span>
   </div>
-  ${state.showOmborSoniBreakdown ? `
-  <div class="card" style="margin-bottom:12px;">
-    ${Object.keys(perModelCount).sort().map(m => `
-      <div class="list-row" style="display:flex;justify-content:space-between;padding:6px 0;">
-        <span>${m}</span>
-        <span style="font-weight:700;color:#065F46;">${perModelCount[m]} dona</span>
-      </div>`).join('') || `<div class="empty">Ma'lumot yo'q</div>`}
-  </div>` : ''}
 
   ${isAdminView ? `
   <div class="total-summary" style="background:#EFF6FF;border-color:#2563EB;margin-bottom:${state.showOmborSummaBreakdown ? '0' : '16px'};cursor:pointer;" onclick="state.showOmborSummaBreakdown=!state.showOmborSummaBreakdown;render();">
@@ -1719,14 +1708,12 @@ function renderChiqimlar() {
   let totalChiqimSoni = 0;
   let totalChiqimNarxi = 0;
   const perModelChiqimNarxi = {};
-  const perModelChiqimSoni = {};
   list.forEach(c => {
     totalChiqimSoni += (c.soni || 0);
     const summa = c.jamiSumma || 0;
     totalChiqimNarxi += summa;
     const model = (c.modelKey || '').split('-')[0];
     perModelChiqimNarxi[model] = (perModelChiqimNarxi[model] || 0) + summa;
-    perModelChiqimSoni[model] = (perModelChiqimSoni[model] || 0) + (c.soni || 0);
   });
 
   const rows = list.length === 0 ? `<div class="empty">📦 Chiqimlar topilmadi</div>` :
@@ -1772,21 +1759,12 @@ function renderChiqimlar() {
     ${(state.chiqimFrom || state.chiqimTo) ? `<button class="secondary" style="width:100%; margin-top:8px;" onclick="state.chiqimFrom='';state.chiqimTo='';render();">✕ Sana filtrini tozalash</button>` : ''}
   </div>
 
-  <div class="total-summary" style="background:#ECFDF5;border-color:#059669;margin-bottom:${state.showChiqimSoniBreakdown ? '0' : '14px'};cursor:pointer;" onclick="state.showChiqimSoniBreakdown=!state.showChiqimSoniBreakdown;render();">
+  <div class="total-summary" style="background:#ECFDF5;border-color:#059669;margin-bottom:14px;">
     <div>
       <span class="label" style="color:#065F46;">📦 Jami chiqim soni:</span>
-      <div style="font-size:12px;color:#047857;">Tarkibini ko'rish uchun bosing</div>
     </div>
     <span class="number" style="color:#065F46;">${totalChiqimSoni} ${l.dona}</span>
   </div>
-  ${state.showChiqimSoniBreakdown ? `
-  <div class="card" style="margin-bottom:14px;">
-    ${Object.keys(perModelChiqimSoni).sort().map(m => `
-      <div class="list-row" style="display:flex;justify-content:space-between;padding:6px 0;">
-        <span>${m}</span>
-        <span style="font-weight:700;color:#065F46;">${perModelChiqimSoni[m]} ${l.dona}</span>
-      </div>`).join('') || `<div class="empty">Ma'lumot yo'q</div>`}
-  </div>` : ''}
 
   ${isAdminChiqim ? `
   <div class="total-summary" style="background:#EFF6FF;border-color:#2563EB;margin-bottom:${state.showChiqimSummaBreakdown ? '0' : '14px'};cursor:pointer;" onclick="state.showChiqimSummaBreakdown=!state.showChiqimSummaBreakdown;render();">
