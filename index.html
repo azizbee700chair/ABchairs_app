@@ -308,7 +308,9 @@ let state = {
   stockFilterModel: 'all', stockFilterColor: 'all',
   chiqimFilterModel: 'all', chiqimFilterColor: 'all', showOmborSummaBreakdown: false, showIchSummaBreakdown: false,
   buyurtmaFrom: '', buyurtmaTo: '', pricesRevealed: false, stockListCollapsed: true,
-  chiqimFrom: '', chiqimTo: '', showChiqimSummaBreakdown: false, chiqimListCollapsed: true
+  chiqimFrom: '', chiqimTo: '', showChiqimSummaBreakdown: false, chiqimListCollapsed: true,
+  showOmborSoniBreakdown: false, showChiqimSoniBreakdown: false, loginBolim: '',
+  loginJustSaved: false, pendingUser: null
 };
 
 function L() { return T[state.lang] || T.uz; }
@@ -358,17 +360,19 @@ async function syncFromSheets(force) {
         if (seenIds.has(o.id)) { hadDuplicates = true; return; }
         seenIds.add(o.id);
 
-        // MUHIM: konverning o'zi takrorlanmagan bo'lsa ham, ICHIDAGI
-        // partiyalar (bo'laklar) orasida bir xil (bosqich/holat/soni/rang/
-        // qabulVaqti bir xil) yozuvlar bir necha marta takrorlanib qolishi
-        // mumkin edi — buni ham shu yerda tozalaymiz.
+        // MUHIM: bu yerda FAQAT bir xil "pid" (identifikator) borligini
+        // tekshiramiz — aynan shu holat haqiqiy texnik xato (masalan tarmoq
+        // xatosi tufayli) hisoblanadi. Mazmuni bir xil (bosqich/soni/rang
+        // bir xil) lekin PID'i boshqa bo'laklar ATAYLAB tozalanmaydi,
+        // chunki ular chindan ham ALOHIDA-ALOHIDA (turli vaqtda yopilgan)
+        // haqiqiy partiyalar bo'lishi mumkin — bunday holatlarni "xato" deb
+        // hisoblab o'chirish, aslida to'g'ri ma'lumotni yo'qotib qo'yardi.
         if (Array.isArray(o.partiyalar)) {
-          const seenSig = new Set();
+          const seenPid = new Set();
           const dedupedPartiyalar = [];
           o.partiyalar.forEach(p => {
-            const sig = [p.bosqich, p.holat, p.soni, p.rang, p.susal, p.qabulVaqti, p.tugashVaqti].join('|');
-            if (seenSig.has(sig)) { hadDuplicates = true; return; }
-            seenSig.add(sig);
+            if (p.pid && seenPid.has(p.pid)) { hadDuplicates = true; return; }
+            if (p.pid) seenPid.add(p.pid);
             dedupedPartiyalar.push(p);
           });
           o.partiyalar = dedupedPartiyalar;
@@ -1188,31 +1192,86 @@ function ticketCard(order, partiya, showActions) {
   </div>`;
 }
 
+const BOLIM_ICON = {
+  admin: '👔', zborka: '🔨🪚', shkurka: '🪵', astarsepish: '🪣',
+  astarshkurka: '🧽', lak: '🖌️', susal: '✨', qoplash: '🪡', ombor: '📦'
+};
+
 function renderLogin() {
   const l = L();
+  const deptUsers = USERS.filter(u => u.login !== 'admin');
+  const adminUser = USERS.find(u => u.login === 'admin');
+  const selected = state.loginBolim || '';
+
+  const chip = (u, big) => `
+    <div onclick="selectLoginBolim('${u.login}')" class="login-chip" style="
+      cursor:pointer; user-select:none; text-align:center;
+      padding:${big ? '16px 10px' : '12px 6px'}; border-radius:14px;
+      border:2px solid var(--line);
+      background:#fff; color:var(--ink);
+      font-weight:700; font-size:${big ? '14px' : '12.5px'};
+    ">
+      <div class="login-chip-icon" style="font-size:${big ? '30px' : '24px'}; margin-bottom:4px;">${BOLIM_ICON[u.bolim] || '🏭'}</div>
+      ${u.login === 'admin' ? l.boshBolim : getStageLabel(u.bolim)}
+    </div>`;
+
+  const chosenUser = USERS.find(u => u.login === selected);
+
+  const passwordModal = (state.loginBolim && !state.loginJustSaved) ? `
+  <div class="modal-overlay" onclick="if(event.target===this){state.loginBolim='';render();}">
+    <div class="modal" style="max-width:320px; text-align:center;" onclick="event.stopPropagation();">
+      <div style="font-size:44px; margin-bottom:6px;">${BOLIM_ICON[chosenUser ? chosenUser.bolim : ''] || '🏭'}</div>
+      <h3 style="margin:0 0 4px;">${chosenUser ? (chosenUser.login === 'admin' ? l.boshBolim : getStageLabel(chosenUser.bolim)) : ''}</h3>
+      <p style="color:var(--ink-soft); font-size:12px; margin-top:0;">${l.parol}ni kiriting</p>
+
+      <input type="password" id="loginParol" placeholder="••••" autofocus style="text-align:center; font-size:18px; letter-spacing:4px;" onkeydown="if(event.key==='Enter') doLogin()">
+      ${state.loginErr ? `<div class="err">${l.xato}</div>` : ''}
+
+      <button class="primary" style="width:100%;margin-top:12px;padding:12px;" onclick="doLogin()">${l.kirish}</button>
+      <button class="secondary" style="width:100%;margin-top:8px;" onclick="state.loginBolim=''; state.loginErr=false; render();">← ${l.boshqaBolim || "Boshqa bo'lim"}</button>
+    </div>
+  </div>` : '';
+
+  const savePwdModal = state.loginJustSaved ? `
+  <div class="modal-overlay">
+    <div class="modal" style="max-width:320px; text-align:center;">
+      <div style="font-size:40px; margin-bottom:6px;">🔐</div>
+      <h3 style="margin:0 0 8px;">Parolni saqlab qo'yaymi?</h3>
+      <p style="color:var(--ink-soft); font-size:13px;">Shunda keyingi safar shu qurilmada parolni qayta kiritishingiz shart bo'lmaydi. "Chiqish" tugmasi bosilsa, saqlangan parol o'chiriladi.</p>
+      <div class="actions" style="margin-top:10px;">
+        <button class="secondary" style="flex:1;" onclick="finishLogin(false)">Yo'q</button>
+        <button class="primary" style="flex:1;" onclick="finishLogin(true)">Ha, saqlansin</button>
+      </div>
+    </div>
+  </div>` : '';
+
   return `
   <div class="login-screen">
-    <div class="login-card">
+    <div class="login-card" style="max-width:380px;">
       <div class="stamp">🪑 ABchairs</div>
-      <p style="color:var(--ink-soft);font-size:12px;margin-top:0;margin-bottom:24px;text-align:center;font-weight:600;letter-spacing:0.5px;">Zelta premium</p>
-      
-      <label class="field-label">${l.bolim}</label>
-      <select id="loginBolim">
-        <option value="" disabled selected>${l.selectBolimPlaceholder}</option>
-        ${USERS.map(u => `<option value="${u.login}">${u.login === 'admin' ? l.boshBolim : getStageLabel(u.bolim)}</option>`).join('')}
-      </select>
+      <p style="color:var(--ink-soft);font-size:12px;margin-top:0;margin-bottom:20px;text-align:center;font-weight:600;letter-spacing:0.5px;">Zelta premium</p>
 
-      <label class="field-label">${l.parol}</label>
-      <input type="password" id="loginParol" placeholder="••••" onkeydown="if(event.key==='Enter') doLogin()">
-      ${state.loginErr ? `<div class="err">${l.xato}</div>` : ''}
-      <button class="primary" style="width:100%;margin-top:8px;padding:12px;" onclick="doLogin()">${l.kirish}</button>
+      <label class="field-label">${l.bolim}</label>
+      ${adminUser ? `<div style="margin-bottom:10px;">${chip(adminUser, true)}</div>` : ''}
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:6px;">
+        ${deptUsers.map(u => chip(u, false)).join('')}
+      </div>
     </div>
-  </div>`;
+  </div>
+  ${passwordModal}
+  ${savePwdModal}`;
+}
+
+function selectLoginBolim(login) {
+  state.loginBolim = login;
+  state.loginErr = false;
+  render();
+  setTimeout(() => { const el = document.getElementById('loginParol'); if (el) el.focus(); }, 80);
 }
 
 function doLogin() {
-  const login = document.getElementById('loginBolim').value;
-  const parol = document.getElementById('loginParol').value;
+  const login = state.loginBolim;
+  const parol = document.getElementById('loginParol') ? document.getElementById('loginParol').value : '';
   
   if (!login) {
     state.loginErr = true;
@@ -1222,10 +1281,24 @@ function doLogin() {
 
   const u = USERS.find(x => x.login === login && x.parol === parol);
   if (!u) { state.loginErr = true; render(); return; }
-  
-  state.user = u; 
+
   state.loginErr = false;
-  storage.set('app_user', JSON.stringify(u));
+  state.pendingUser = u;
+  state.loginJustSaved = true; // "parolni saqlaymi?" oynasini ko'rsatish uchun belgi
+  render();
+}
+
+function finishLogin(remember) {
+  const u = state.pendingUser;
+  state.user = u;
+  state.loginJustSaved = false;
+  state.pendingUser = null;
+  state.loginBolim = '';
+  if (remember) {
+    storage.set('app_user', JSON.stringify(u));
+  } else {
+    storage.remove('app_user');
+  }
   
   const initialTab = u.bolim === 'admin' ? 'menu' : (u.bolim === 'ombor' ? 'ombor_menu' : 'ish');
   switchTab(initialTab);
@@ -1287,6 +1360,23 @@ function checkFixPassword() {
     alert('Parol noto\'g\'ri');
   }
 }
+
+// Bu — "Qaytarish"dan BUTUNLAY MUSTAQIL funksiya: faqat shu bitta bo'lakni
+// (partiyani) ro'yxatdan olib tashlaydi, hech qanday boshqa bosqichga
+// ko'chirmaydi. Masalan takrorlanib qolgan ortiqcha yozuvni tozalash uchun.
+function adminDeletePartiya(konverId, pid) {
+  const o = findOrder(konverId); if (!o) return;
+  const p = o.partiyalar.find(x => x.pid === pid); if (!p) return;
+
+  if (!confirm(`"${konverId}" (${o.model}, ${p.soni} dona, ${getStageLabel(p.bosqich)}) — bu bo'lak BUTUNLAY o'chirilsinmi? Bu amalni orqaga qaytarib bo'lmaydi.`)) return;
+
+  o.partiyalar = o.partiyalar.filter(x => x.pid !== pid);
+  log('admin', 'bo\'lakni o\'chirdi', konverId, o.model, p.soni, `${getStageLabel(p.bosqich)}dan o'chirildi`);
+  recomputeHolat(o);
+  saveOrders();
+  render();
+}
+adminDeletePartiya = withActionLock(adminDeletePartiya);
 
 function adminRevertPartiya(konverId, pid) {
   const o = findOrder(konverId); if (!o) return;
@@ -1379,7 +1469,10 @@ function renderFixModal() {
                 <b>${o.id}</b> &middot; ${o.model} &middot; ${p.soni} dona
                 <div style="font-size:12px; color:#6B7280;">Hozir: ${getStageLabel(p.bosqich)} (${p.holat}) &rarr; ${getStageLabel(STAGE_SEQ[STAGE_SEQ.indexOf(p.bosqich)-1] || '-')}ga qaytadi</div>
               </div>
-              <button class="secondary" style="padding:8px 10px; font-size:12px;" onclick="adminRevertPartiya('${o.id}','${p.pid}')">⬅ Qaytarish</button>
+              <div style="display:flex; gap:6px;">
+                <button class="danger-btn" style="padding:8px 10px; font-size:12px;" onclick="adminDeletePartiya('${o.id}','${p.pid}')" title="Bu bo'lakni butunlay o'chirish (masalan takrorlanib qolgan bo'lsa)">🗑</button>
+                <button class="secondary" style="padding:8px 10px; font-size:12px;" onclick="adminRevertPartiya('${o.id}','${p.pid}')">⬅ Qaytarish</button>
+              </div>
             </div>
           </div>`).join('')}
       </div>
@@ -1521,6 +1614,7 @@ function renderOmborZaxira() {
   const isOmborchi = state.user && state.user.bolim === 'ombor';
   const isAdminView = state.user && state.user.bolim === 'admin';
   const perModelMoney = {};
+  const perModelCount = {};
 
   // Ishlab chiqarishda (zborka...qoplash, ombordan tashqari) hali yurgan
   // stullarning narxini hisoblash — faqat adminga ko'rsatiladi.
@@ -1574,6 +1668,7 @@ function renderOmborZaxira() {
 
     const parts = key.split('-'); const model = parts[0]; const color = parts.slice(1).join('-');
     perModelMoney[model] = (perModelMoney[model] || 0) + total;
+    perModelCount[model] = (perModelCount[model] || 0) + count;
 
     // Omborchiga narx ko'rinmasin (shtrixlangan) — faqat admin parolini
     // kiritib "ochgandan" keyingina, yoki admin bo'lsa har doim ko'rinadi.
@@ -1602,13 +1697,21 @@ function renderOmborZaxira() {
   return `
   ${renderBackButton()}
   
-  <div class="total-summary" style="background:#D1FAE5;border-color:#10B981;margin-bottom:12px;">
+  <div class="total-summary" style="background:#D1FAE5;border-color:#10B981;margin-bottom:${state.showOmborSoniBreakdown ? '0' : '12px'};cursor:pointer;" onclick="state.showOmborSoniBreakdown=!state.showOmborSoniBreakdown;render();">
     <div>
       <span class="label" style="color:#065F46;">Jami stullar soni:</span>
-      <div style="font-size:12px;color:#047857;">Ombordagi tayyor zaxira</div>
+      <div style="font-size:12px;color:#047857;">Ombordagi tayyor zaxira &middot; tarkibini ko'rish uchun bosing</div>
     </div>
     <span class="number" style="color:#065F46;">${totalStockCount} dona</span>
   </div>
+  ${state.showOmborSoniBreakdown ? `
+  <div class="card" style="margin-bottom:12px;">
+    ${Object.keys(perModelCount).sort().map(m => `
+      <div class="list-row" style="display:flex;justify-content:space-between;padding:6px 0;">
+        <span>${m}</span>
+        <span style="font-weight:700;color:#065F46;">${perModelCount[m]} dona</span>
+      </div>`).join('') || `<div class="empty">Ma'lumot yo'q</div>`}
+  </div>` : ''}
 
   ${isAdminView ? `
   <div class="total-summary" style="background:#EFF6FF;border-color:#2563EB;margin-bottom:${state.showOmborSummaBreakdown ? '0' : '16px'};cursor:pointer;" onclick="state.showOmborSummaBreakdown=!state.showOmborSummaBreakdown;render();">
@@ -1708,12 +1811,14 @@ function renderChiqimlar() {
   let totalChiqimSoni = 0;
   let totalChiqimNarxi = 0;
   const perModelChiqimNarxi = {};
+  const perModelChiqimSoni = {};
   list.forEach(c => {
     totalChiqimSoni += (c.soni || 0);
     const summa = c.jamiSumma || 0;
     totalChiqimNarxi += summa;
     const model = (c.modelKey || '').split('-')[0];
     perModelChiqimNarxi[model] = (perModelChiqimNarxi[model] || 0) + summa;
+    perModelChiqimSoni[model] = (perModelChiqimSoni[model] || 0) + (c.soni || 0);
   });
 
   const rows = list.length === 0 ? `<div class="empty">📦 Chiqimlar topilmadi</div>` :
@@ -1759,12 +1864,21 @@ function renderChiqimlar() {
     ${(state.chiqimFrom || state.chiqimTo) ? `<button class="secondary" style="width:100%; margin-top:8px;" onclick="state.chiqimFrom='';state.chiqimTo='';render();">✕ Sana filtrini tozalash</button>` : ''}
   </div>
 
-  <div class="total-summary" style="background:#ECFDF5;border-color:#059669;margin-bottom:14px;">
+  <div class="total-summary" style="background:#ECFDF5;border-color:#059669;margin-bottom:${state.showChiqimSoniBreakdown ? '0' : '14px'};cursor:pointer;" onclick="state.showChiqimSoniBreakdown=!state.showChiqimSoniBreakdown;render();">
     <div>
       <span class="label" style="color:#065F46;">📦 Jami chiqim soni:</span>
+      <div style="font-size:12px;color:#047857;">Tarkibini ko'rish uchun bosing</div>
     </div>
     <span class="number" style="color:#065F46;">${totalChiqimSoni} ${l.dona}</span>
   </div>
+  ${state.showChiqimSoniBreakdown ? `
+  <div class="card" style="margin-bottom:14px;">
+    ${Object.keys(perModelChiqimSoni).sort().map(m => `
+      <div class="list-row" style="display:flex;justify-content:space-between;padding:6px 0;">
+        <span>${m}</span>
+        <span style="font-weight:700;color:#065F46;">${perModelChiqimSoni[m]} ${l.dona}</span>
+      </div>`).join('') || `<div class="empty">Ma'lumot yo'q</div>`}
+  </div>` : ''}
 
   ${isAdminChiqim ? `
   <div class="total-summary" style="background:#EFF6FF;border-color:#2563EB;margin-bottom:${state.showChiqimSummaBreakdown ? '0' : '14px'};cursor:pointer;" onclick="state.showChiqimSummaBreakdown=!state.showChiqimSummaBreakdown;render();">
