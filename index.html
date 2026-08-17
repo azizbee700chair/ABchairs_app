@@ -309,8 +309,7 @@ let state = {
   chiqimFilterModel: 'all', chiqimFilterColor: 'all', showOmborSummaBreakdown: false, showIchSummaBreakdown: false,
   buyurtmaFrom: '', buyurtmaTo: '', pricesRevealed: false, stockListCollapsed: true,
   chiqimFrom: '', chiqimTo: '', showChiqimSummaBreakdown: false, chiqimListCollapsed: true,
-  showOmborSoniBreakdown: false, showChiqimSoniBreakdown: false, loginBolim: '',
-  loginJustSaved: false, pendingUser: null
+  showOmborSoniBreakdown: false, showChiqimSoniBreakdown: false, loginBolim: ''
 };
 
 function L() { return T[state.lang] || T.uz; }
@@ -1193,8 +1192,8 @@ function ticketCard(order, partiya, showActions) {
 }
 
 const BOLIM_ICON = {
-  admin: '👔', zborka: '🔨🪚', shkurka: '🪵', astarsepish: '🪣',
-  astarshkurka: '🧽', lak: '🖌️', susal: '✨', qoplash: '🪡', ombor: '📦'
+  admin: '👔', zborka: '🪚', shkurka: '🧽', astarsepish: '🧴',
+  astarshkurka: '🧹', lak: '🖌️', susal: '✨', qoplash: '🪡', ombor: '📦'
 };
 
 function renderLogin() {
@@ -1217,7 +1216,7 @@ function renderLogin() {
 
   const chosenUser = USERS.find(u => u.login === selected);
 
-  const passwordModal = (state.loginBolim && !state.loginJustSaved) ? `
+  const passwordModal = state.loginBolim ? `
   <div class="modal-overlay" onclick="if(event.target===this){state.loginBolim='';render();}">
     <div class="modal" style="max-width:320px; text-align:center;" onclick="event.stopPropagation();">
       <div style="font-size:44px; margin-bottom:6px;">${BOLIM_ICON[chosenUser ? chosenUser.bolim : ''] || '🏭'}</div>
@@ -1229,19 +1228,6 @@ function renderLogin() {
 
       <button class="primary" style="width:100%;margin-top:12px;padding:12px;" onclick="doLogin()">${l.kirish}</button>
       <button class="secondary" style="width:100%;margin-top:8px;" onclick="state.loginBolim=''; state.loginErr=false; render();">← ${l.boshqaBolim || "Boshqa bo'lim"}</button>
-    </div>
-  </div>` : '';
-
-  const savePwdModal = state.loginJustSaved ? `
-  <div class="modal-overlay">
-    <div class="modal" style="max-width:320px; text-align:center;">
-      <div style="font-size:40px; margin-bottom:6px;">🔐</div>
-      <h3 style="margin:0 0 8px;">Parolni saqlab qo'yaymi?</h3>
-      <p style="color:var(--ink-soft); font-size:13px;">Shunda keyingi safar shu qurilmada parolni qayta kiritishingiz shart bo'lmaydi. "Chiqish" tugmasi bosilsa, saqlangan parol o'chiriladi.</p>
-      <div class="actions" style="margin-top:10px;">
-        <button class="secondary" style="flex:1;" onclick="finishLogin(false)">Yo'q</button>
-        <button class="primary" style="flex:1;" onclick="finishLogin(true)">Ha, saqlansin</button>
-      </div>
     </div>
   </div>` : '';
 
@@ -1258,8 +1244,7 @@ function renderLogin() {
       </div>
     </div>
   </div>
-  ${passwordModal}
-  ${savePwdModal}`;
+  ${passwordModal}`;
 }
 
 function selectLoginBolim(login) {
@@ -1272,7 +1257,7 @@ function selectLoginBolim(login) {
 function doLogin() {
   const login = state.loginBolim;
   const parol = document.getElementById('loginParol') ? document.getElementById('loginParol').value : '';
-  
+
   if (!login) {
     state.loginErr = true;
     render();
@@ -1283,23 +1268,10 @@ function doLogin() {
   if (!u) { state.loginErr = true; render(); return; }
 
   state.loginErr = false;
-  state.pendingUser = u;
-  state.loginJustSaved = true; // "parolni saqlaymi?" oynasini ko'rsatish uchun belgi
-  render();
-}
-
-function finishLogin(remember) {
-  const u = state.pendingUser;
   state.user = u;
-  state.loginJustSaved = false;
-  state.pendingUser = null;
   state.loginBolim = '';
-  if (remember) {
-    storage.set('app_user', JSON.stringify(u));
-  } else {
-    storage.remove('app_user');
-  }
-  
+  storage.set('app_user', JSON.stringify(u));
+
   const initialTab = u.bolim === 'admin' ? 'menu' : (u.bolim === 'ombor' ? 'ombor_menu' : 'ish');
   switchTab(initialTab);
 }
