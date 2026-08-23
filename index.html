@@ -221,9 +221,16 @@ const storage = {
   }
 };
 
-const MODELS = ['Milano','Elizabetta','Sofia','Baracco','Laura','Sultan','Owen','Onix','Sheikh'];
+let MODELS = ['Milano','Elizabetta','Sofia','Baracco','Laura','Sultan','Owen','Onix','Sheikh'];
+// Har bir fason qaysi bo'limdan boshlanishini belgilaydi. Sukut bo'yicha "zborka",
+// lekin masalan "Owen" kabi ba'zi fasonlar to'g'ridan-to'g'ri "shkurka"dan boshlanadi.
+let MODEL_START_STAGE = { Owen: 'shkurka' };
 const CHAIR_IMAGES = { 'Milano': '', 'Elizabetta': '', 'Sofia': '', 'Baracco': '', 'Laura': '', 'Sultan': '', 'Owen': '', 'Onix': '', 'Sheikh': '' };
 const COLORS = ['kod-013', 'kod-011', 'kod-e8', 'kod-123', 'Shanpan', 'Shanpan q.p', 'Qora rang'];
+
+function getModelStartStage(model) {
+  return MODEL_START_STAGE[model] || 'zborka';
+}
 
 const USERS = [
   { login: 'admin', parol: '0641244', bolim: 'admin' },
@@ -309,7 +316,8 @@ let state = {
   chiqimFilterModel: 'all', chiqimFilterColor: 'all', showOmborSummaBreakdown: false, showIchSummaBreakdown: false,
   buyurtmaFrom: '', buyurtmaTo: '', pricesRevealed: false, stockListCollapsed: true,
   chiqimFrom: '', chiqimTo: '', showChiqimSummaBreakdown: false, chiqimListCollapsed: true,
-  showOmborSoniBreakdown: false, showChiqimSoniBreakdown: false, loginBolim: ''
+  showOmborSoniBreakdown: false, showChiqimSoniBreakdown: false, loginBolim: '',
+  ishFilterBolim: 'all', ishFilterModel: 'all'
 };
 
 function L() { return T[state.lang] || T.uz; }
@@ -346,6 +354,18 @@ async function syncFromSheets(force) {
       const newOmbor = data.ombor ? JSON.parse(data.ombor) : { zaxira: {}, chiqimlar: [] };
       if (!newOmbor.chiqimlar) newOmbor.chiqimlar = [];
       if (!newOmbor.zaxira) newOmbor.zaxira = {};
+
+      if (data.fasonlar) {
+        try {
+          const parsed = JSON.parse(data.fasonlar);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            MODELS = parsed; // eski format (faqat massiv)
+          } else if (parsed && Array.isArray(parsed.MODELS) && parsed.MODELS.length > 0) {
+            MODELS = parsed.MODELS;
+            if (parsed.MODEL_START_STAGE) MODEL_START_STAGE = parsed.MODEL_START_STAGE;
+          }
+        } catch (e) { /* eski formatdagi ma'lumot bo'lsa, joriy MODELS bilan davom etamiz */ }
+      }
 
       // MUHIM: agar biror sabab bilan bir xil konver ID bir necha marta
       // takrorlanib qolgan bo'lsa (masalan eskirgan holatda yaratilgan bo'lsa),
@@ -489,6 +509,19 @@ function loadData() {
   if(!state.ombor.chiqimlar) state.ombor.chiqimlar = [];
   if(!state.ombor.zaxira) state.ombor.zaxira = {};
 
+  const savedFasonlar = storage.get('fasonlar');
+  if (savedFasonlar) {
+    try {
+      const parsed = JSON.parse(savedFasonlar.value);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        MODELS = parsed; // eski format (faqat massiv)
+      } else if (parsed && Array.isArray(parsed.MODELS) && parsed.MODELS.length > 0) {
+        MODELS = parsed.MODELS;
+        if (parsed.MODEL_START_STAGE) MODEL_START_STAGE = parsed.MODEL_START_STAGE;
+      }
+    } catch (e) { /* joriy standart ro'yxat bilan davom etiladi */ }
+  }
+
   const savedUser = storage.get('app_user');
   if (savedUser) state.user = JSON.parse(savedUser.value);
   
@@ -548,6 +581,7 @@ function makeQueuedPusher(key, getValue) {
 const pushOrdersQueued = makeQueuedPusher('orders', () => state.orders);
 const pushTarixQueued = makeQueuedPusher('tarix', () => state.tarix);
 const pushOmborQueued = makeQueuedPusher('ombor', () => state.ombor);
+const pushFasonlarQueued = makeQueuedPusher('fasonlar', () => ({ MODELS, MODEL_START_STAGE }));
 
 function saveOrders() {
   saveLocalOrders();
@@ -562,6 +596,11 @@ function saveTarix() {
 function saveOmbor() {
   saveLocalOmbor();
   pushOmborQueued();
+}
+
+function saveFasonlar() {
+  storage.set('fasonlar', JSON.stringify({ MODELS, MODEL_START_STAGE }));
+  pushFasonlarQueued();
 }
 
 function log(bolim, amal, konver, model, soni, izoh, rang) {
@@ -636,7 +675,7 @@ async function createOrder(konver, model, soni, narx) {
   if (findOrder(konver)) { alert(L().konverMavjud); return false; }
   
   const now = new Date().toISOString();
-  const BoshlangichBosqich = (model.toLowerCase() === 'owen') ? 'shkurka' : 'zborka';
+  const BoshlangichBosqich = getModelStartStage(model);
   const narxBirlik = parseFloat(narx) || 0;
 
   state.orders.push({
@@ -1172,6 +1211,16 @@ function ticketCard(order, partiya, showActions) {
     </div>
   `;
 
+  const MAIN_STAGES = ['zborka', 'shkurka', 'astarsepish', 'astarshkurka', 'lak', 'qoplash', 'ombor'];
+  const effectiveBosqich = partiya.bosqich === 'susal' ? 'lak' : partiya.bosqich;
+  const stageIdx = MAIN_STAGES.indexOf(effectiveBosqich);
+  const isFinished = partiya.bosqich === 'ombor' && partiya.holat === 'tugadi';
+  const isAdminTicket = state.user && state.user.bolim === 'admin';
+  const progressBar = isAdminTicket ? `
+    <div style="display:flex; gap:3px; margin:8px 0 2px;">
+      ${MAIN_STAGES.map((s, i) => `<div style="flex:1; height:6px; border-radius:3px; background:${i <= stageIdx ? (isFinished ? '#10B981' : '#3B82F6') : '#E5E7EB'};"></div>`).join('')}
+    </div>` : '';
+
   return `
   <div class="card ticket">
     <div class="stub">${esc(order.id)}</div>
@@ -1185,6 +1234,7 @@ function ticketCard(order, partiya, showActions) {
         <span><b>${partiya.soni}</b> ${l.dona}</span> &middot; <span><b>${stageLbl}</b></span>
         ${susalTag} ${colorTag}
       </div>
+      ${progressBar}
       ${timeInfo}
       ${actionsHtml}
     </div>
@@ -1495,6 +1545,11 @@ function renderAdminMenu() {
       <div class="title">${l.chiqimTarixi}</div>
       <div class="sub">Ombor chiqimlar tarixi</div>
     </div>
+    <div class="menu-card" onclick="switchTab('fasonlar')">
+      <div class="icon">🪑</div>
+      <div class="title">Fasonlar</div>
+      <div class="sub">Qo'shish, tahrirlash, o'chirish</div>
+    </div>
   </div>`;
 }
 
@@ -1555,12 +1610,42 @@ function renderDeptDashboard() {
     }
   });
 
-  items.sort((a, b) => (a.p.holat === 'jarayonda' ? 0 : 1) - (b.p.holat === 'jarayonda' ? 0 : 1));
+  // Faqat admin uchun: bo'lim va fason bo'yicha filtr
+  let filteredItems = items;
+  const filterHtml = isAdmin ? `
+  <div class="filter-box" style="margin-bottom:14px;">
+    <div>
+      <label class="field-label">Bo'lim bo'yicha:</label>
+      <select onchange="state.ishFilterBolim=this.value;render();">
+        <option value="all" ${state.ishFilterBolim==='all'?'selected':''}>Barcha bo'limlar</option>
+        ${STAGE_SEQ.map(s => `<option value="${s}" ${state.ishFilterBolim===s?'selected':''}>${getStageLabel(s)}</option>`).join('')}
+      </select>
+    </div>
+    <div>
+      <label class="field-label">Fason bo'yicha:</label>
+      <select onchange="state.ishFilterModel=this.value;render();">
+        <option value="all" ${state.ishFilterModel==='all'?'selected':''}>Barcha fasonlar</option>
+        ${MODELS.map(m => `<option value="${m}" ${state.ishFilterModel===m?'selected':''}>${m}</option>`).join('')}
+      </select>
+    </div>
+  </div>` : '';
+
+  if (isAdmin) {
+    if (state.ishFilterBolim && state.ishFilterBolim !== 'all') {
+      filteredItems = filteredItems.filter(x => x.p.bosqich === state.ishFilterBolim);
+    }
+    if (state.ishFilterModel && state.ishFilterModel !== 'all') {
+      filteredItems = filteredItems.filter(x => x.o.model === state.ishFilterModel);
+    }
+  }
+
+  filteredItems.sort((a, b) => (a.p.holat === 'jarayonda' ? 0 : 1) - (b.p.holat === 'jarayonda' ? 0 : 1));
 
   return `
   ${renderBackButton()}
   <h2 class="section-title">${isAdmin ? '⚡ Jarayondagi ishlar nazorati' : l.navbat}</h2>
-  ${items.length === 0 ? `<div class="empty">✅ ${l.hechNarsaYoq}</div>` : items.map(x => ticketCard(x.o, x.p, !isAdmin)).join('')}
+  ${filterHtml}
+  ${filteredItems.length === 0 ? `<div class="empty">✅ ${l.hechNarsaYoq}</div>` : filteredItems.map(x => ticketCard(x.o, x.p, !isAdmin)).join('')}
   `;
 }
 
@@ -1597,6 +1682,7 @@ function renderOmborZaxira() {
   // "hali jarayonda" deb hisoblanib, narx noto'g'ri ko'payib ketardi.
   let ichTotalMoney = 0;
   const perModelIch = {};
+  const perModelIchSoni = {};
   state.orders.forEach(o => {
     const narx = parseFloat(o.narxBirlik) || 0;
     if (narx <= 0) return;
@@ -1608,6 +1694,7 @@ function renderOmborZaxira() {
       const qiymat = ichSoni * narx;
       ichTotalMoney += qiymat;
       perModelIch[o.model] = (perModelIch[o.model] || 0) + qiymat;
+      perModelIchSoni[o.model] = (perModelIchSoni[o.model] || 0) + ichSoni;
     }
   });
 
@@ -1697,7 +1784,7 @@ function renderOmborZaxira() {
   <div class="card" style="margin-bottom:16px;">
     ${Object.keys(perModelMoney).sort().map(m => `
       <div class="list-row" style="display:flex;justify-content:space-between;padding:6px 0;">
-        <span>${m}</span>
+        <span>${m} <span style="color:var(--ink-soft); font-weight:400;">(${perModelCount[m] || 0} dona)</span></span>
         <span style="font-weight:700;color:#1E40AF;">$${perModelMoney[m].toLocaleString()}</span>
       </div>`).join('') || `<div class="empty">Ma'lumot yo'q</div>`}
   </div>` : ''}
@@ -1713,7 +1800,7 @@ function renderOmborZaxira() {
   <div class="card" style="margin-bottom:16px;">
     ${Object.keys(perModelIch).sort().map(m => `
       <div class="list-row" style="display:flex;justify-content:space-between;padding:6px 0;">
-        <span>${m}</span>
+        <span>${m} <span style="color:var(--ink-soft); font-weight:400;">(${perModelIchSoni[m] || 0} dona)</span></span>
         <span style="font-weight:700;color:#9A3412;">$${perModelIch[m].toLocaleString()}</span>
       </div>`).join('') || `<div class="empty">Ma'lumot yo'q</div>`}
   </div>` : ''}
@@ -1904,13 +1991,47 @@ function renderYangiBuyurtma() {
     <label class="field-label">${l.konverRaqami}</label>
     <input id="fKonver" placeholder="Masalan: K-101">
     <label class="field-label">${l.model}</label>
-    <select id="fModel">${MODELS.map(m => `<option value="${m}">${m}</option>`).join('')}</select>
+    <select id="fModel" onchange="toggleCustomModelInput('fModel','fModelCustomWrap')">
+      ${MODELS.map(m => `<option value="${m}">${m}</option>`).join('')}
+      <option value="__custom__">➕ Boshqa (yangi fason)...</option>
+    </select>
+    <div id="fModelCustomWrap" style="display:none;">
+      <label class="field-label">Yangi fason nomi</label>
+      <input id="fModelCustom" placeholder="Masalan: Venera">
+      <label class="field-label">Bu fason qaysi bo'limdan boshlanadi?</label>
+      <select id="fModelCustomStart">
+        ${STAGE_SEQ.filter(s => s !== 'susal').map(s => `<option value="${s}" ${s==='zborka'?'selected':''}>${getStageLabel(s)}</option>`).join('')}
+      </select>
+    </div>
     <label class="field-label">${l.soni}</label>
     <input id="fSoni" type="number" min="1" placeholder="12" oninput="updateYangiBuyurtmaJami()">
     <label class="field-label">Bitta stul narxi ($)</label>
     <input id="fNarx" type="number" min="0" step="0.01" placeholder="200" oninput="updateYangiBuyurtmaJami()">
     <div id="fJamiSumma" style="font-weight:700; font-size:15px; color:#7C3AED; background:#F3E8FF; border-radius:8px; padding:10px 12px; margin-bottom:12px;">Jami summa: $0</div>
     <button class="primary" id="btnSaqlashYangi" style="width:100%" onclick="submitNewOrder()">${l.saqlash}</button>
+  </div>
+  <div style="text-align:center; margin-top:12px;">
+    <span onclick="switchTab('fasonlar')" style="color:var(--primary); font-weight:600; font-size:13px; cursor:pointer;">🗂 Fasonlarni boshqarish →</span>
+  </div>`;
+}
+
+function renderFasonlar() {
+  const l = L();
+  return `
+  ${renderBackButton()}
+  <h2 class="section-title">🗂 FASONLARNI BOSHQARISH</h2>
+  <div class="card">
+    ${MODELS.map(m => `
+      <div class="list-row" style="display:flex; justify-content:space-between; align-items:center; padding:8px 0;">
+        <div>
+          <b>${esc(m)}</b>
+          <div style="font-size:11px; color:var(--ink-soft);">Boshlanadi: ${getStageLabel(getModelStartStage(m))}</div>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <button class="edit-btn" style="padding:5px 9px; font-size:12px;" onclick="editModelName('${esc(m)}')">✏️</button>
+          <button class="danger-btn" style="padding:5px 9px; font-size:12px;" onclick="deleteModelName('${esc(m)}')">🗑</button>
+        </div>
+      </div>`).join('')}
   </div>`;
 }
 
@@ -1921,9 +2042,56 @@ function updateYangiBuyurtmaJami() {
   if (jamiEl) jamiEl.textContent = `Jami summa: $${(s * n).toLocaleString()}`;
 }
 
+function toggleCustomModelInput(selectId, wrapId) {
+  const sel = document.getElementById(selectId);
+  const wrap = document.getElementById(wrapId);
+  if (!sel || !wrap) return;
+  wrap.style.display = sel.value === '__custom__' ? 'block' : 'none';
+}
+
+function editModelName(oldName) {
+  const newName = prompt(`"${oldName}" fasonining yangi nomini kiriting:`, oldName);
+  if (newName === null) return;
+  const trimmed = newName.trim();
+  if (!trimmed) { alert('Nom bo\'sh bo\'lishi mumkin emas'); return; }
+  if (trimmed !== oldName && MODELS.includes(trimmed)) { alert('Bu nomdagi fason allaqachon mavjud'); return; }
+
+  const idx = MODELS.indexOf(oldName);
+  if (idx === -1) return;
+  MODELS[idx] = trimmed;
+
+  if (MODEL_START_STAGE[oldName]) {
+    MODEL_START_STAGE[trimmed] = MODEL_START_STAGE[oldName];
+    delete MODEL_START_STAGE[oldName];
+  }
+
+  alert('Diqqat: bu — faqat ro\'yxatdagi nomni o\'zgartiradi. Bu fasonda avval yaratilgan mavjud buyurtmalarning nomi o\'zgarmaydi.');
+  saveFasonlar();
+  render();
+}
+
+function deleteModelName(name) {
+  if (!confirm(`"${name}" fasoni ro'yxatdan butunlay o'chirilsinmi? (Bu fasonda avval yaratilgan buyurtmalarga ta'sir qilmaydi, faqat endi yangi buyurtma yaratishda bu nom ro'yxatda chiqmay qoladi.)`)) return;
+
+  MODELS = MODELS.filter(m => m !== name);
+  delete MODEL_START_STAGE[name];
+  saveFasonlar();
+  render();
+}
+
 async function submitNewOrder() {
   const k = document.getElementById('fKonver').value;
-  const m = document.getElementById('fModel').value;
+  let m = document.getElementById('fModel').value;
+  if (m === '__custom__') {
+    m = (document.getElementById('fModelCustom').value || '').trim();
+    if (!m) { alert('Yangi fason nomini kiriting'); return; }
+    const startStage = document.getElementById('fModelCustomStart') ? document.getElementById('fModelCustomStart').value : 'zborka';
+    if (!MODELS.includes(m)) {
+      MODELS.push(m);
+      MODEL_START_STAGE[m] = startStage;
+      saveFasonlar();
+    }
+  }
   const s = parseInt(document.getElementById('fSoni').value);
   const n = parseFloat(document.getElementById('fNarx').value) || 0;
   const btn = document.getElementById('btnSaqlashYangi');
@@ -2452,6 +2620,7 @@ function render() {
   if (state.user.bolim === 'admin') {
     if (state.tab === 'menu') content = renderAdminMenu();
     else if (state.tab === 'yangi') content = renderYangiBuyurtma();
+    else if (state.tab === 'fasonlar') content = renderFasonlar();
     else if (state.tab === 'buyurtmalar') content = renderBuyurtmalar();
     else if (state.tab === 'ombor_zaxira') content = renderOmborZaxira();
     else if (state.tab === 'statistika') content = renderStatistika();
