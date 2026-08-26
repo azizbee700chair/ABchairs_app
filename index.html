@@ -226,7 +226,7 @@ let MODELS = ['Milano','Elizabetta','Sofia','Baracco','Laura','Sultan','Owen','O
 // lekin masalan "Owen" kabi ba'zi fasonlar to'g'ridan-to'g'ri "shkurka"dan boshlanadi.
 let MODEL_START_STAGE = { Owen: 'shkurka' };
 const CHAIR_IMAGES = { 'Milano': '', 'Elizabetta': '', 'Sofia': '', 'Baracco': '', 'Laura': '', 'Sultan': '', 'Owen': '', 'Onix': '', 'Sheikh': '' };
-const COLORS = ['kod-013', 'kod-011', 'kod-e8','kod-108', 'kod-118', 'kod-123', 'Shanpan', 'Shanpan q.p', 'Qora rang'];
+const COLORS = ['kod-013', 'kod-011', 'kod-e8', 'kod-123', 'Shanpan', 'Shanpan q.p', 'Qora rang'];
 
 function getModelStartStage(model) {
   return MODEL_START_STAGE[model] || 'zborka';
@@ -2287,13 +2287,13 @@ function renderStatistika() {
 
           konverRows.push({
             konver: o.id, model: o.model, soni: p.soni,
-            boshlangan: p.qabulVaqti, tugatilgan: p.tugashVaqti, holat: 'tugadi'
+            boshlangan: p.qabulVaqti, tugatilgan: p.tugashVaqti, holat: 'tugadi', rang: p.rang || null
           });
         } else {
           totalInProcessSum += p.soni;
           konverRows.push({
             konver: o.id, model: o.model, soni: p.soni,
-            boshlangan: p.qabulVaqti, tugatilgan: null, holat: p.holat
+            boshlangan: p.qabulVaqti, tugatilgan: null, holat: p.holat, rang: p.rang || null
           });
         }
       }
@@ -2310,6 +2310,7 @@ function renderStatistika() {
     <tr>
       <td><b>${esc(k.konver)}</b><br><span style="color:var(--ink-soft);font-size:11px;">${esc(k.model)}</span></td>
       <td><b>${k.soni}</b> ${l.dona}</td>
+      <td>${k.rang ? colorBadge(k.rang) : '<span style="color:var(--ink-soft);font-size:11px;">—</span>'}</td>
       <td>${badge(k.holat)}</td>
       <td>${formatTimeOnly(k.tugatilgan || k.boshlangan)}</td>
     </tr>
@@ -2320,7 +2321,7 @@ function renderStatistika() {
       <table class="clean-table">
         <thead>
           <tr>
-            <th>Konver</th><th>Soni</th><th>Holati</th><th>Vaqt</th>
+            <th>Konver</th><th>Soni</th><th>Rang</th><th>Holati</th><th>Vaqt</th>
           </tr>
         </thead>
         <tbody>${konverTableRows}</tbody>
