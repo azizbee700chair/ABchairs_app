@@ -226,7 +226,7 @@ let MODELS = ['Milano','Elizabetta','Sofia','Baracco','Laura','Sultan','Owen','O
 // lekin masalan "Owen" kabi ba'zi fasonlar to'g'ridan-to'g'ri "shkurka"dan boshlanadi.
 let MODEL_START_STAGE = { Owen: 'shkurka' };
 const CHAIR_IMAGES = { 'Milano': '', 'Elizabetta': '', 'Sofia': '', 'Baracco': '', 'Laura': '', 'Sultan': '', 'Owen': '', 'Onix': '', 'Sheikh': '' };
-const COLORS = ['kod-013', 'kod-011', 'kod-e8', 'kod-108', 'kod-123', 'Shanpan', 'Shanpan q.p', 'Qora rang'];
+const COLORS = ['kod-013', 'kod-011', 'kod-e8','kod-108', 'kod-123', 'Shanpan', 'Shanpan q.p', 'Qora rang'];
 
 function getModelStartStage(model) {
   return MODEL_START_STAGE[model] || 'zborka';
@@ -317,7 +317,7 @@ let state = {
   buyurtmaFrom: '', buyurtmaTo: '', pricesRevealed: false, stockListCollapsed: true,
   chiqimFrom: '', chiqimTo: '', showChiqimSummaBreakdown: false, chiqimListCollapsed: true,
   showOmborSoniBreakdown: false, showChiqimSoniBreakdown: false, loginBolim: '',
-  ishFilterBolim: 'all', ishFilterModel: 'all'
+  ishFilterBolim: 'all', ishFilterModel: 'all', saveFailedBanner: false, manualSyncInProgress: false
 };
 
 function L() { return T[state.lang] || T.uz; }
@@ -433,8 +433,13 @@ async function syncFromSheets(force) {
   if (force) render();
 }
 
-function manualRefresh() {
-  syncFromSheets(true);
+async function manualRefresh() {
+  if (state.manualSyncInProgress) return; // allaqachon ishlayapti — qayta bosilsa e'tiborsiz qoldiriladi
+  state.manualSyncInProgress = true;
+  render();
+  await syncFromSheets(true);
+  state.manualSyncInProgress = false;
+  render();
 }
 
 document.addEventListener('touchmove', function(e){
@@ -554,26 +559,55 @@ function saveLocalOmbor() { storage.set('ombor', JSON.stringify(state.ombor)); }
 function makeQueuedPusher(key, getValue) {
   let inFlight = false;
   let queued = false;
+  async function attemptOnce() {
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'set', key, value: JSON.stringify(getValue()) })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const result = await res.json();
+    if (!result || result.ok !== true) {
+      throw new Error((result && result.error) || 'Server "ok:true" qaytarmadi');
+    }
+  }
   async function run() {
     if (inFlight) { queued = true; return; }
     inFlight = true;
     pendingPushes++; render();
-    try {
-      await fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'set', key, value: JSON.stringify(getValue()) })
-      });
-      isOnline = true;
-    } catch (e) {
-      isOnline = false;
-      console.error('Sheetsga yozishda xato:', e);
-    } finally {
-      pendingPushes--; lastPushDoneAt = Date.now();
-      inFlight = false;
-      render();
-      if (queued) { queued = false; run(); }
+
+    let success = false;
+    let lastErr = null;
+    // Jami 3 marta urinib ko'radi (1 asosiy + 2 qayta urinish), har safar
+    // orasida qisqa kutish bilan — server band (lock) bo'lganda ham
+    // ma'lumot yo'qolib qolmasligi uchun.
+    for (let attempt = 0; attempt < 3 && !success; attempt++) {
+      try {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 700 * attempt));
+        await attemptOnce();
+        success = true;
+      } catch (e) {
+        lastErr = e;
+      }
     }
+
+    if (success) {
+      isOnline = true;
+      state.saveFailedBanner = false;
+    } else {
+      isOnline = false;
+      console.error('Sheetsga yozishda xato (3 urinishdan keyin):', lastErr);
+      // MUHIM: bu yerda jim qolmaymiz — foydalanuvchi darhol ko'radigan
+      // doimiy ogohlantirish chiqaramiz, chunki aks holda o'zgarish
+      // serverga yozilmay, keyin "qaytadan paydo bo'lish" holatiga olib
+      // kelishi mumkin edi.
+      state.saveFailedBanner = true;
+    }
+
+    pendingPushes--; lastPushDoneAt = Date.now();
+    inFlight = false;
+    render();
+    if (queued) { queued = false; run(); }
   }
   return run;
 }
@@ -613,20 +647,32 @@ function log(bolim, amal, konver, model, soni, izoh, rang) {
 // Tarixga faqat bitta yangi yozuvni qo'shish (butun ro'yxatni qayta yozmaslik uchun)
 async function appendTarixToServer(entry) {
   pendingPushes++; render();
-  try {
-    await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'appendTarix', entry })
-    });
-    isOnline = true;
-  } catch (e) {
-    isOnline = false;
-    console.error('Tarixga yozishda xato:', e);
-  } finally {
-    pendingPushes--; lastPushDoneAt = Date.now();
-    render();
+  let success = false, lastErr = null;
+  for (let attempt = 0; attempt < 3 && !success; attempt++) {
+    try {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 700 * attempt));
+      const res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'appendTarix', entry })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const result = await res.json();
+      if (!result || result.ok !== true) throw new Error((result && result.error) || 'Server "ok:true" qaytarmadi');
+      success = true;
+    } catch (e) {
+      lastErr = e;
+    }
   }
+  if (success) {
+    isOnline = true;
+  } else {
+    isOnline = false;
+    console.error('Tarixga yozishda xato (3 urinishdan keyin):', lastErr);
+    state.saveFailedBanner = true;
+  }
+  pendingPushes--; lastPushDoneAt = Date.now();
+  render();
 }
 
 function switchTab(tabName) {
@@ -2654,6 +2700,11 @@ function render() {
   el.innerHTML = `
     ${renderTopbar()}
     ${renderUserbar()}
+    ${state.saveFailedBanner ? `
+    <div style="position:sticky; top:0; z-index:999; background:#DC2626; color:#fff; padding:10px 14px; font-size:13px; font-weight:700; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+      <span>⚠️ Oxirgi o'zgarish serverga YOZILMADI! Internetni tekshirib, "Yangilash" tugmasini bosing.</span>
+      <button onclick="state.saveFailedBanner=false; syncFromSheets(true);" style="background:#fff; color:#DC2626; border:none; border-radius:6px; padding:6px 10px; font-weight:700; font-size:12px; cursor:pointer; white-space:nowrap;">🔄 Qayta urinish</button>
+    </div>` : ''}
     <main>
       ${nonAdminTabs}
       ${content}
@@ -2668,10 +2719,10 @@ function render() {
     ${renderEditChiqimModal()}
     ${renderHistoryModal()}
     ${renderEditModal()}
-    ${pendingPushes > 0 ? `
+    ${(pendingPushes > 0 || state.manualSyncInProgress) ? `
     <div style="position:fixed; inset:0; background:rgba(15,23,42,0.35); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999; gap:12px;">
       <div style="width:46px; height:46px; border:4px solid rgba(255,255,255,0.35); border-top-color:#fff; border-radius:50%; animation:saqlanmoqda-spin 0.8s linear infinite;"></div>
-      <div style="color:#fff; font-weight:700; font-size:14px; background:rgba(0,0,0,0.25); padding:6px 14px; border-radius:100px;">Saqlanmoqda...</div>
+      <div style="color:#fff; font-weight:700; font-size:14px; background:rgba(0,0,0,0.25); padding:6px 14px; border-radius:100px;">${state.manualSyncInProgress && pendingPushes === 0 ? 'Yangilanmoqda...' : 'Saqlanmoqda...'}</div>
     </div>
     <style>@keyframes saqlanmoqda-spin { to { transform: rotate(360deg); } }</style>
     ` : ''}
