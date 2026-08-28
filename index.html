@@ -226,7 +226,7 @@ let MODELS = ['Milano','Elizabetta','Sofia','Baracco','Laura','Sultan','Owen','O
 // lekin masalan "Owen" kabi ba'zi fasonlar to'g'ridan-to'g'ri "shkurka"dan boshlanadi.
 let MODEL_START_STAGE = { Owen: 'shkurka' };
 const CHAIR_IMAGES = { 'Milano': '', 'Elizabetta': '', 'Sofia': '', 'Baracco': '', 'Laura': '', 'Sultan': '', 'Owen': '', 'Onix': '', 'Sheikh': '' };
-const COLORS = ['kod-013', 'kod-011', 'kod-e8', 'kod-123', 'Shanpan', 'Shanpan q.p', 'Qora rang'];
+const COLORS = ['kod-013', 'kod-011', 'kod-e8', 'kod-108', 'kod-118', 'kod-123', 'Shanpan', 'Shanpan q.p', 'Qora rang'];
 
 function getModelStartStage(model) {
   return MODEL_START_STAGE[model] || 'zborka';
@@ -328,8 +328,11 @@ function getStageLabel(key) {
 
 // GOOGLE SHEETS BILAN DATA ALMASHINUVI
 let pendingPushes = 0;
+let pendingTarixPushes = 0; // tarix yozuvi uchun alohida, bloklamaydigan hisoblagich
 let lastPushDoneAt = 0;
 const PUSH_GRACE_MS = 6000;
+
+let lastRawOrders = null, lastRawTarix = null, lastRawOmbor = null;
 
 async function syncFromSheets(force) {
   if (!force && (pendingPushes > 0 || (Date.now() - lastPushDoneAt) < PUSH_GRACE_MS)) {
@@ -349,11 +352,21 @@ async function syncFromSheets(force) {
     }
 
     if (data && data.ok) {
-      const newOrdersRaw = data.orders ? JSON.parse(data.orders) : [];
-      const newTarix = data.tarix ? JSON.parse(data.tarix) : [];
-      const newOmbor = data.ombor ? JSON.parse(data.ombor) : { zaxira: {}, chiqimlar: [] };
-      if (!newOmbor.chiqimlar) newOmbor.chiqimlar = [];
-      if (!newOmbor.zaxira) newOmbor.zaxira = {};
+      isOnline = true;
+
+      // TEZKOR TEKSHIRUV: ma'lumot ko'payib borgani sayin, har 8 soniyada
+      // butun ro'yxatni JSON'ga aylantirib solishtirish sekinlik keltirar
+      // edi. Endi serverdan kelgan XOM matnni to'g'ridan-to'g'ri (parse
+      // qilmasdan) avvalgisi bilan solishtiramiz — agar bir xil bo'lsa,
+      // og'ir ishlarning (parse, dublikat tekshirish, render) BIRONTASI
+      // ham bajarilmaydi.
+      const ordersChanged = data.orders !== lastRawOrders;
+      const tarixChanged = data.tarix !== lastRawTarix;
+      const omborChanged = data.ombor !== lastRawOmbor;
+
+      if (!ordersChanged && !tarixChanged && !omborChanged && !force) {
+        return; // hech narsa o'zgarmagan — hech qanday og'ir ish qilinmaydi
+      }
 
       if (data.fasonlar) {
         try {
@@ -367,49 +380,62 @@ async function syncFromSheets(force) {
         } catch (e) { /* eski formatdagi ma'lumot bo'lsa, joriy MODELS bilan davom etamiz */ }
       }
 
-      // MUHIM: agar biror sabab bilan bir xil konver ID bir necha marta
-      // takrorlanib qolgan bo'lsa (masalan eskirgan holatda yaratilgan bo'lsa),
-      // shu yerda avtomatik aniqlab, faqat birinchisini qoldiramiz va
-      // tozalangan holatni serverga qaytarib yozamiz — shu bilan ma'lumot
-      // asta-sekin o'z-o'zini tuzatib boradi.
-      const seenIds = new Set();
-      const newOrders = [];
       let hadDuplicates = false;
-      newOrdersRaw.forEach(o => {
-        if (seenIds.has(o.id)) { hadDuplicates = true; return; }
-        seenIds.add(o.id);
 
-        // MUHIM: bu yerda FAQAT bir xil "pid" (identifikator) borligini
-        // tekshiramiz — aynan shu holat haqiqiy texnik xato (masalan tarmoq
-        // xatosi tufayli) hisoblanadi. Mazmuni bir xil (bosqich/soni/rang
-        // bir xil) lekin PID'i boshqa bo'laklar ATAYLAB tozalanmaydi,
-        // chunki ular chindan ham ALOHIDA-ALOHIDA (turli vaqtda yopilgan)
-        // haqiqiy partiyalar bo'lishi mumkin — bunday holatlarni "xato" deb
-        // hisoblab o'chirish, aslida to'g'ri ma'lumotni yo'qotib qo'yardi.
-        if (Array.isArray(o.partiyalar)) {
-          const seenPid = new Set();
-          const dedupedPartiyalar = [];
-          o.partiyalar.forEach(p => {
-            if (p.pid && seenPid.has(p.pid)) { hadDuplicates = true; return; }
-            if (p.pid) seenPid.add(p.pid);
-            dedupedPartiyalar.push(p);
-          });
-          o.partiyalar = dedupedPartiyalar;
-        }
+      if (ordersChanged) {
+        const newOrdersRaw = data.orders ? JSON.parse(data.orders) : [];
 
-        newOrders.push(o);
-      });
+        // MUHIM: agar biror sabab bilan bir xil konver ID bir necha marta
+        // takrorlanib qolgan bo'lsa (masalan eskirgan holatda yaratilgan bo'lsa),
+        // shu yerda avtomatik aniqlab, faqat birinchisini qoldiramiz va
+        // tozalangan holatni serverga qaytarib yozamiz — shu bilan ma'lumot
+        // asta-sekin o'z-o'zini tuzatib boradi.
+        const seenIds = new Set();
+        const newOrders = [];
+        newOrdersRaw.forEach(o => {
+          if (seenIds.has(o.id)) { hadDuplicates = true; return; }
+          seenIds.add(o.id);
 
-      const changed =
-        JSON.stringify(newOrders) !== JSON.stringify(state.orders) ||
-        JSON.stringify(newTarix) !== JSON.stringify(state.tarix) ||
-        JSON.stringify(newOmbor) !== JSON.stringify(state.ombor);
+          // MUHIM: bu yerda FAQAT bir xil "pid" (identifikator) borligini
+          // tekshiramiz — aynan shu holat haqiqiy texnik xato (masalan tarmoq
+          // xatosi tufayli) hisoblanadi. Mazmuni bir xil (bosqich/soni/rang
+          // bir xil) lekin PID'i boshqa bo'laklar ATAYLAB tozalanmaydi,
+          // chunki ular chindan ham ALOHIDA-ALOHIDA (turli vaqtda yopilgan)
+          // haqiqiy partiyalar bo'lishi mumkin — bunday holatlarni "xato" deb
+          // hisoblab o'chirish, aslida to'g'ri ma'lumotni yo'qotib qo'yardi.
+          if (Array.isArray(o.partiyalar)) {
+            const seenPid = new Set();
+            const dedupedPartiyalar = [];
+            o.partiyalar.forEach(p => {
+              if (p.pid && seenPid.has(p.pid)) { hadDuplicates = true; return; }
+              if (p.pid) seenPid.add(p.pid);
+              dedupedPartiyalar.push(p);
+            });
+            o.partiyalar = dedupedPartiyalar;
+          }
 
-      state.orders = newOrders;
-      state.tarix = newTarix;
-      state.ombor = newOmbor;
-      saveLocalOrders(); saveLocalTarix(); saveLocalOmbor();
-      isOnline = true;
+          newOrders.push(o);
+        });
+
+        state.orders = newOrders;
+        saveLocalOrders();
+        lastRawOrders = data.orders;
+      }
+
+      if (tarixChanged) {
+        state.tarix = data.tarix ? JSON.parse(data.tarix) : [];
+        saveLocalTarix();
+        lastRawTarix = data.tarix;
+      }
+
+      if (omborChanged) {
+        const newOmbor = data.ombor ? JSON.parse(data.ombor) : { zaxira: {}, chiqimlar: [] };
+        if (!newOmbor.chiqimlar) newOmbor.chiqimlar = [];
+        if (!newOmbor.zaxira) newOmbor.zaxira = {};
+        state.ombor = newOmbor;
+        saveLocalOmbor();
+        lastRawOmbor = data.ombor;
+      }
 
       if (hadDuplicates) {
         pushOrdersQueued(); // tozalangan ro'yxatni serverga qaytarib yozish
@@ -419,7 +445,7 @@ async function syncFromSheets(force) {
       const isTyping = activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA';
       const safeToRender = force || (state.user && state.tab !== 'yangi' && !isTyping);
 
-      if ((changed || force) && safeToRender) {
+      if (safeToRender) {
         render();
       }
       return;
@@ -646,7 +672,11 @@ function log(bolim, amal, konver, model, soni, izoh, rang) {
 
 // Tarixga faqat bitta yangi yozuvni qo'shish (butun ro'yxatni qayta yozmaslik uchun)
 async function appendTarixToServer(entry) {
-  pendingPushes++; render();
+  // MUHIM: tarix (harakatlar tarixi) — ikkinchi darajali (fon) yozuv, shuning
+  // uchun asosiy "Saqlanmoqda..." ko'rsatkichini bloklamaydi. Faqat konver/
+  // ombor ma'lumotlari (pendingPushes) tugaguncha kutish yetarli — foydalanuvchi
+  // buni ikki marta kutib o'tirmasin.
+  pendingTarixPushes++;
   let success = false, lastErr = null;
   for (let attempt = 0; attempt < 3 && !success; attempt++) {
     try {
@@ -670,9 +700,10 @@ async function appendTarixToServer(entry) {
     isOnline = false;
     console.error('Tarixga yozishda xato (3 urinishdan keyin):', lastErr);
     state.saveFailedBanner = true;
+    render();
   }
-  pendingPushes--; lastPushDoneAt = Date.now();
-  render();
+  pendingTarixPushes--;
+  lastPushDoneAt = Date.now();
 }
 
 function switchTab(tabName) {
