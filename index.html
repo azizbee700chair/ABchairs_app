@@ -555,6 +555,7 @@ function loadData() {
 
   const savedUser = storage.get('app_user');
   if (savedUser) state.user = JSON.parse(savedUser.value);
+  loadStatDatesForCurrentUser();
   
   const savedTab = storage.get('app_tab');
   if (savedTab) state.tab = savedTab.value;
@@ -668,6 +669,31 @@ function log(bolim, amal, konver, model, soni, izoh, rang) {
   state.tarix.push(entry);
   saveLocalTarix();
   appendTarixToServer(entry); // faqat shu bitta yozuvni qo'shadi, butun tarixni qayta yozmaydi
+}
+
+// MUHIM: har bir bo'lim o'zining tanlagan sana oralig'ini ALOHIDA saqlaydi
+// (localStorage'da bo'lim nomi bilan), shunda:
+// 1) bitta bo'limda sana tanlash boshqa bo'limga ta'sir qilmaydi
+// 2) ilova qayta ochilganda ham, o'zgartirilmaguncha o'sha sana turaveradi
+function loadStatDatesForCurrentUser() {
+  if (!state.user) { state.statFrom = ''; state.statTo = ''; return; }
+  const bolim = state.user.bolim;
+  const f = storage.get('stat_from_' + bolim);
+  const t = storage.get('stat_to_' + bolim);
+  state.statFrom = f ? f.value : '';
+  state.statTo = t ? t.value : '';
+}
+
+function setStatFrom(val) {
+  state.statFrom = val;
+  if (state.user) storage.set('stat_from_' + state.user.bolim, val);
+  render();
+}
+
+function setStatTo(val) {
+  state.statTo = val;
+  if (state.user) storage.set('stat_to_' + state.user.bolim, val);
+  render();
 }
 
 // Tarixga faqat bitta yangi yozuvni qo'shish (butun ro'yxatni qayta yozmaslik uchun)
@@ -837,6 +863,20 @@ function editOrder(oldKonver, newKonver, newModel, newSoni, newNarx) {
   o.partiyalar.forEach(p => {
     p.pid = p.pid.replace(oldKonver, newKonver);
   });
+
+  // MUHIM: agar konver hali hech qayerga bo'linmagan bo'lsa (hali faqat bitta
+  // partiyada, ya'ni hech kim uni qabul qilib ishlamagan yoki hali bitta
+  // bosqichda to'liq turibdi) — o'sha yagona partiyaning sonini ham yangi
+  // songa moslashtiramiz. Aks holda faqat "jami son" o'zgarib, bo'limlar
+  // hali eski (o'zgarmagan) sonni ko'raverar edi.
+  if (o.partiyalar.length === 1) {
+    o.partiyalar[0].soni = newSoni;
+  } else {
+    // Konver allaqachon bir necha bo'limga bo'linib ketgan bo'lsa, "jami son"ni
+    // avtomatik moslashtirib bo'lmaydi (qaysi bo'lakka qo'shish/ayirish
+    // noaniq) — shuning uchun bunday holatda adminni ogohlantiramiz.
+    alert('Diqqat: bu konver allaqachon bir necha bo\'limga bo\'linib ketgan (' + o.partiyalar.length + ' bo\'lak). "Jami son" yangilandi, lekin mavjud bo\'laklarning har birining o\'z sonini o\'zgartirish uchun "🛠 Tuzatish" oynasidan alohida-alohida amal bajarish tavsiya etiladi.');
+  }
 
   if (state.ombor.chiqimlar) {
     state.ombor.chiqimlar.forEach(c => {
@@ -1398,6 +1438,7 @@ function doLogin() {
   state.user = u;
   state.loginBolim = '';
   storage.set('app_user', JSON.stringify(u));
+  loadStatDatesForCurrentUser();
 
   const initialTab = u.bolim === 'admin' ? 'menu' : (u.bolim === 'ombor' ? 'ombor_menu' : 'ish');
   switchTab(initialTab);
@@ -2393,11 +2434,11 @@ function renderStatistika() {
   <div class="filter-box">
     <div>
       <label class="field-label">${l.sanaDan}</label>
-      <input type="date" value="${state.statFrom}" onchange="state.statFrom=this.value;render();">
+      <input type="date" value="${state.statFrom}" onchange="setStatFrom(this.value);">
     </div>
     <div>
       <label class="field-label">${l.sanaGacha}</label>
-      <input type="date" value="${state.statTo}" onchange="state.statTo=this.value;render();">
+      <input type="date" value="${state.statTo}" onchange="setStatTo(this.value);">
     </div>
   </div>
 
