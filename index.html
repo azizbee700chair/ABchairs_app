@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -317,7 +318,8 @@ let state = {
   buyurtmaFrom: '', buyurtmaTo: '', pricesRevealed: false, stockListCollapsed: true,
   chiqimFrom: '', chiqimTo: '', showChiqimSummaBreakdown: false, chiqimListCollapsed: true,
   showOmborSoniBreakdown: false, showChiqimSoniBreakdown: false, loginBolim: '',
-  ishFilterBolim: 'all', ishFilterModel: 'all', saveFailedBanner: false, manualSyncInProgress: false
+  ishFilterBolim: 'all', ishFilterModel: 'all', saveFailedBanner: false, manualSyncInProgress: false,
+  archive: [], archiveSearch: ''
 };
 
 function L() { return T[state.lang] || T.uz; }
@@ -332,10 +334,22 @@ let pendingTarixPushes = 0; // tarix yozuvi uchun alohida, bloklamaydigan hisobl
 let lastPushDoneAt = 0;
 const PUSH_GRACE_MS = 6000;
 
-let lastRawOrders = null, lastRawTarix = null, lastRawOmbor = null;
+let lastRawOrders = null, lastRawTarix = null, lastRawOmbor = null, lastRawArchive = null;
+
+async function waitForPendingPushes() {
+  // MUHIM: agar aynan shu payt serverga yozish (pushOrdersQueued va h.k.)
+  // davom etayotgan bo'lsa, "force" bo'lsa ham ALBATTA shu yozish
+  // tugashini kutamiz. Aks holda, hali yozilib ulgurmagan (masalan
+  // endigina yaratilgan boshqa konver) eskirgan holat serverdan qayta
+  // o'qilib, ustidan yozib yuborilishi (ya'ni yo'q bo'lib qolishi) mumkin edi.
+  while (pendingPushes > 0) {
+    await new Promise(r => setTimeout(r, 150));
+  }
+}
 
 async function syncFromSheets(force) {
-  if (!force && (pendingPushes > 0 || (Date.now() - lastPushDoneAt) < PUSH_GRACE_MS)) {
+  await waitForPendingPushes();
+  if (!force && (Date.now() - lastPushDoneAt) < PUSH_GRACE_MS) {
     return;
   }
   try {
@@ -347,7 +361,8 @@ async function syncFromSheets(force) {
     // bor — shuning uchun natijani QABUL QILISHDAN OLDIN yana bir bor
     // tekshiramiz. Aks holda hali yetib bormagan eski ma'lumot, endigina
     // qilingan o'zgarishning ustidan yozib yuborishi mumkin edi.
-    if (!force && (pendingPushes > 0 || (Date.now() - lastPushDoneAt) < PUSH_GRACE_MS)) {
+    await waitForPendingPushes();
+    if (!force && (Date.now() - lastPushDoneAt) < PUSH_GRACE_MS) {
       return;
     }
 
@@ -363,8 +378,9 @@ async function syncFromSheets(force) {
       const ordersChanged = data.orders !== lastRawOrders;
       const tarixChanged = data.tarix !== lastRawTarix;
       const omborChanged = data.ombor !== lastRawOmbor;
+      const archiveChanged = data.archive !== lastRawArchive;
 
-      if (!ordersChanged && !tarixChanged && !omborChanged && !force) {
+      if (!ordersChanged && !tarixChanged && !omborChanged && !archiveChanged && !force) {
         return; // hech narsa o'zgarmagan — hech qanday og'ir ish qilinmaydi
       }
 
@@ -437,8 +453,20 @@ async function syncFromSheets(force) {
         lastRawOmbor = data.ombor;
       }
 
+      if (archiveChanged) {
+        state.archive = data.archive ? JSON.parse(data.archive) : [];
+        storage.set('archive', JSON.stringify(state.archive));
+        lastRawArchive = data.archive;
+      }
+
       if (hadDuplicates) {
         pushOrdersQueued(); // tozalangan ro'yxatni serverga qaytarib yozish
+      }
+
+      // Faqat admin kirganda, kuniga bir marta — 2 oydan ortiq to'liq
+      // tugagan konverlarni avtomatik arxivga o'tkazib turadi.
+      if (state.user && state.user.bolim === 'admin') {
+        maybeRunAutoArchive();
       }
 
       const activeTag = document.activeElement && document.activeElement.tagName;
@@ -643,6 +671,58 @@ const pushOrdersQueued = makeQueuedPusher('orders', () => state.orders);
 const pushTarixQueued = makeQueuedPusher('tarix', () => state.tarix);
 const pushOmborQueued = makeQueuedPusher('ombor', () => state.ombor);
 const pushFasonlarQueued = makeQueuedPusher('fasonlar', () => ({ MODELS, MODEL_START_STAGE }));
+const pushArchiveQueued = makeQueuedPusher('archive', () => state.archive);
+
+function saveArchive() {
+  storage.set('archive', JSON.stringify(state.archive));
+  pushArchiveQueued();
+}
+
+// Kuniga bir martagina tekshiradi (admin ilovani necha marta ochmasin,
+// ortiqcha ishlamasligi uchun)
+function maybeRunAutoArchive() {
+  const lastRun = storage.get('lastAutoArchiveDate');
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastRun && lastRun.value === today) return;
+  storage.set('lastAutoArchiveDate', today);
+  runAutoArchive();
+}
+
+// 2 oydan (60 kundan) ortiq TO'LIQ tugagan (barcha bo'laklari omborga
+// kirim bo'lgan) konverlarni "orders" dan "archive" ga ko'chiradi.
+// MUHIM: bu ombor zaxirasiga (state.ombor.zaxira) hech qanday tegmaydi —
+// faqat konver yozuvining o'zi ko'chiriladi, zaxira o'zgarmasdan qoladi.
+function runAutoArchive() {
+  const cutoff = Date.now() - (60 * 24 * 60 * 60 * 1000);
+  const toArchive = [];
+  const remaining = [];
+
+  state.orders.forEach(o => {
+    if (o.holat === 'tayyor') {
+      let latestFinish = 0;
+      (o.partiyalar || []).forEach(p => {
+        if (p.tugashVaqti) {
+          const t = new Date(p.tugashVaqti).getTime();
+          if (t > latestFinish) latestFinish = t;
+        }
+      });
+      if (latestFinish > 0 && latestFinish < cutoff) {
+        toArchive.push(o);
+        return;
+      }
+    }
+    remaining.push(o);
+  });
+
+  if (toArchive.length === 0) return;
+
+  state.archive = (state.archive || []).concat(toArchive);
+  state.orders = remaining;
+  saveOrders();
+  saveArchive();
+  log('admin', 'avtomatik arxivlandi', '-', '-', toArchive.length, `${toArchive.length} ta konver 2 oydan ortiq tugagani uchun arxivga o'tkazildi`);
+  render();
+}
 
 function saveOrders() {
   saveLocalOrders();
@@ -1257,7 +1337,7 @@ function exportToExcel() {
   const fromDate = state.statFrom ? new Date(state.statFrom + 'T00:00:00') : null;
   const toDate = state.statTo ? new Date(state.statTo + 'T23:59:59') : null;
 
-  state.orders.forEach(o => {
+  [...state.orders, ...(state.archive || [])].forEach(o => {
     o.partiyalar.forEach(p => {
       if (p.bosqich === targetDept) {
         if (p.tugashVaqti) {
@@ -1623,6 +1703,43 @@ function renderFixModal() {
   </div>`;
 }
 
+function renderArxiv() {
+  const l = L();
+  const search = (state.archiveSearch || '').toLowerCase();
+  const isAdminArxiv = state.user && state.user.bolim === 'admin';
+
+  let list = state.archive || [];
+  if (search) {
+    list = list.filter(o => o.id.toLowerCase().includes(search) || o.model.toLowerCase().includes(search));
+  }
+  list = list.slice().reverse();
+
+  return `
+  ${renderBackButton()}
+  <h2 class="section-title">🗄 Arxiv <span style="font-weight:400; font-size:13px; color:var(--ink-soft);">(${state.archive.length} ta konver)</span></h2>
+  <div class="card" style="margin-bottom:14px;">
+    <input placeholder="Konver yoki fason bo'yicha qidirish..." value="${esc(state.archiveSearch || '')}" oninput="state.archiveSearch=this.value; render();">
+    <button class="secondary" style="width:100%; margin-top:8px;" onclick="runAutoArchive(); alert('Tekshirildi.');">🔄 Hozir tekshirish (qo'lda)</button>
+  </div>
+  ${list.length === 0 ? `<div class="empty">🗄 Arxivda konver yo'q</div>` : list.map(o => {
+    const stages = (o.partiyalar || []).map(p => `${getStageLabel(p.bosqich)} (${p.soni})${p.rang ? ' · ' + esc(p.rang) : ''}`).join(', ');
+    return `
+    <div class="card ticket">
+      <div class="stub">${esc(o.id)}</div>
+      <div class="body">
+        <div class="row-between">
+          <div class="model">${esc(o.model)} &middot; ${o.jamiSoni} ${l.dona}</div>
+          <span class="badge done">${l.holatTayyor || 'TAYYOR'}</span>
+        </div>
+        <div class="time-text" style="margin-top:4px;"><b>${l.buyurtmaVaqti || 'Yaratilgan'}:</b> ${formatDate(o.sana)}</div>
+        <div class="meta" style="margin-top:4px;">${stages}</div>
+        ${isAdminArxiv && o.narxBirlik ? `<div style="margin-top:6px; font-weight:700; color:#7C3AED; background:#F3E8FF; display:inline-block; padding:3px 10px; border-radius:100px; font-size:12px;">💵 $${o.narxBirlik}/dona &middot; Jami: $${(o.narxBirlik * o.jamiSoni).toLocaleString()}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('')}
+  `;
+}
+
 function renderAdminMenu() {
   const l = L();
   return `
@@ -1667,6 +1784,11 @@ function renderAdminMenu() {
       <div class="icon">🪑</div>
       <div class="title">Fasonlar</div>
       <div class="sub">Qo'shish, tahrirlash, o'chirish</div>
+    </div>
+    <div class="menu-card" onclick="switchTab('arxiv')">
+      <div class="icon">🗄</div>
+      <div class="title">Arxiv</div>
+      <div class="sub">2 oydan ortiq tugagan konverlar</div>
     </div>
   </div>`;
 }
@@ -2341,7 +2463,7 @@ function renderStatistika() {
   const fromDate = state.statFrom ? new Date(state.statFrom + 'T00:00:00') : null;
   const toDate = state.statTo ? new Date(state.statTo + 'T23:59:59') : null;
 
-  state.orders.forEach(o => {
+  state.orders.concat(state.archive || []).forEach(o => {
     o.partiyalar.forEach(p => {
       const pBolim = p.bosqich;
       const isMatchDept = (pBolim === targetDept);
@@ -2481,7 +2603,7 @@ function renderVaqtHisoboti() {
   const l = L();
   const fasonVaqtlari = {};
 
-  state.orders.forEach(o => {
+  state.orders.concat(state.archive || []).forEach(o => {
     let firstStart = null;
     let lastEnd = null;
 
@@ -2740,6 +2862,7 @@ function render() {
     if (state.tab === 'menu') content = renderAdminMenu();
     else if (state.tab === 'yangi') content = renderYangiBuyurtma();
     else if (state.tab === 'fasonlar') content = renderFasonlar();
+    else if (state.tab === 'arxiv') content = renderArxiv();
     else if (state.tab === 'buyurtmalar') content = renderBuyurtmalar();
     else if (state.tab === 'ombor_zaxira') content = renderOmborZaxira();
     else if (state.tab === 'statistika') content = renderStatistika();
