@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -227,7 +226,7 @@ let MODELS = ['Milano','Elizabetta','Sofia','Baracco','Laura','Sultan','Owen','O
 // lekin masalan "Owen" kabi ba'zi fasonlar to'g'ridan-to'g'ri "shkurka"dan boshlanadi.
 let MODEL_START_STAGE = { Owen: 'shkurka' };
 const CHAIR_IMAGES = { 'Milano': '', 'Elizabetta': '', 'Sofia': '', 'Baracco': '', 'Laura': '', 'Sultan': '', 'Owen': '', 'Onix': '', 'Sheikh': '' };
-const COLORS = ['kod-013', 'kod-011', 'kod-e8', 'kod-118', 'kod-123','kod-9010', 'Shanpan', 'Shanpan q.p', 'Qora rang','Tilla','Baqlajon rang'];
+const COLORS = ['kod-013', 'kod-011', 'kod-e8', 'kod-123', 'kod-118', 'Shanpan', 'Shanpan q.p', 'Qora rang', 'Tilla', 'Baqlajon'];
 
 function getModelStartStage(model) {
   return MODEL_START_STAGE[model] || 'zborka';
@@ -315,7 +314,7 @@ let state = {
   showFasonStat: false, showKonverStat: true,
   stockFilterModel: 'all', stockFilterColor: 'all',
   chiqimFilterModel: 'all', chiqimFilterColor: 'all', showOmborSummaBreakdown: false, showIchSummaBreakdown: false,
-  buyurtmaFrom: '', buyurtmaTo: '', pricesRevealed: false, stockListCollapsed: true,
+  buyurtmaFrom: '', buyurtmaTo: '', buyurtmaSort: 'sana', pricesRevealed: false, stockListCollapsed: true,
   chiqimFrom: '', chiqimTo: '', showChiqimSummaBreakdown: false, chiqimListCollapsed: true,
   showOmborSoniBreakdown: false, showChiqimSoniBreakdown: false, loginBolim: '',
   ishFilterBolim: 'all', ishFilterModel: 'all', saveFailedBanner: false, manualSyncInProgress: false,
@@ -692,7 +691,10 @@ function maybeRunAutoArchive() {
 // kirim bo'lgan) konverlarni "orders" dan "archive" ga ko'chiradi.
 // MUHIM: bu ombor zaxirasiga (state.ombor.zaxira) hech qanday tegmaydi —
 // faqat konver yozuvining o'zi ko'chiriladi, zaxira o'zgarmasdan qoladi.
-function runAutoArchive() {
+// Arxivlash mezoni: 2 oydan (60 kundan) ortiq TO'LIQ tugagan (barcha
+// bo'laklari omborga kirim bo'lgan) konverlar. Bu funksiya hech narsani
+// o'zgartirmaydi — faqat kimlar arxivga tushishini hisoblab beradi.
+function getArchiveCandidates() {
   const cutoff = Date.now() - (60 * 24 * 60 * 60 * 1000);
   const toArchive = [];
   const remaining = [];
@@ -714,6 +716,11 @@ function runAutoArchive() {
     remaining.push(o);
   });
 
+  return { toArchive, remaining };
+}
+
+function runAutoArchive() {
+  const { toArchive, remaining } = getArchiveCandidates();
   if (toArchive.length === 0) return;
 
   state.archive = (state.archive || []).concat(toArchive);
@@ -722,6 +729,65 @@ function runAutoArchive() {
   saveArchive();
   log('admin', 'avtomatik arxivlandi', '-', '-', toArchive.length, `${toArchive.length} ta konver 2 oydan ortiq tugagani uchun arxivga o'tkazildi`);
   render();
+}
+
+// --- QO'LDA ARXIVLASH: avval ko'rsatib, so'ng tasdiqlatib qiladi ---
+function openArchivePreview() {
+  const { toArchive } = getArchiveCandidates();
+  state.archivePreviewModal = { candidates: toArchive };
+  render();
+}
+
+function confirmManualArchive() {
+  const { toArchive, remaining } = getArchiveCandidates();
+  if (toArchive.length === 0) { state.archivePreviewModal = null; render(); return; }
+
+  state.archive = (state.archive || []).concat(toArchive);
+  state.orders = remaining;
+  saveOrders();
+  saveArchive();
+  log('admin', 'qo\'lda arxivlandi', '-', '-', toArchive.length, `${toArchive.length} ta konver boshqaruvchi tomonidan qo'lda arxivlandi`);
+  state.archivePreviewModal = null;
+  render();
+}
+
+function renderArchivePreviewModal() {
+  if (!state.archivePreviewModal) return '';
+  const l = L();
+  const { candidates } = state.archivePreviewModal;
+
+  return `
+  <div class="modal-overlay">
+    <div class="modal" style="max-width:420px;">
+      <h3>🗄 Arxivlashni tasdiqlash</h3>
+      <div class="card" style="background:#F8FAFC; margin-bottom:12px;">
+        <p style="font-size:13px; color:var(--ink-soft); margin:0;">
+          <b>Qoida:</b> faqat <b>to'liq tugagan</b> (barcha bo'laklari omborga kirim bo'lgan) va shu tugashidan beri <b>2 oydan (60 kundan) ortiq</b> vaqt o'tgan konverlar arxivga o'tkaziladi.
+        </p>
+        <p style="font-size:13px; color:var(--ink-soft); margin:8px 0 0;">
+          <b>Muhim:</b> ombordagi zaxira (stullar soni) hech qanday o'zgarmaydi — faqat konver yozuvining o'zi "Arxiv" bo'limiga ko'chadi. Arxivlangan konverni istalgan payt qidirib, to'liq ko'rish mumkin.
+        </p>
+      </div>
+
+      ${candidates.length === 0 ? `
+        <div class="empty">Hozircha arxivlash mezoniga mos keluvchi konver yo'q.</div>
+        <button class="secondary" style="width:100%; margin-top:10px;" onclick="state.archivePreviewModal=null; render();">Yopish</button>
+      ` : `
+        <p style="font-size:13px; font-weight:700;">${candidates.length} ta konver arxivga o'tkaziladi:</p>
+        <div style="max-height:260px; overflow-y:auto; margin-bottom:10px;">
+          ${candidates.map(o => `
+            <div class="list-row" style="display:flex; justify-content:space-between; padding:6px 0;">
+              <span><b>${esc(o.id)}</b> &middot; ${esc(o.model)}</span>
+              <span>${o.jamiSoni} dona</span>
+            </div>`).join('')}
+        </div>
+        <div class="actions">
+          <button class="secondary" style="flex:1;" onclick="state.archivePreviewModal=null; render();">Bekor qilish</button>
+          <button class="primary" style="flex:1;" onclick="confirmManualArchive()">Tasdiqlash, arxivlash</button>
+        </div>
+      `}
+    </div>
+  </div>`;
 }
 
 function saveOrders() {
@@ -845,7 +911,7 @@ function calcDurationMinutes(startIso, endIso) {
   return Math.max(0, Math.round(diff / (1000 * 60)));
 }
 
-async function createOrder(konver, model, soni, narx) {
+async function createOrder(konver, model, soni, narx, oldindanRang) {
   konver = konver.trim();
   if (!konver || !model || !soni || soni <= 0) { alert(L().toliqTuldiring); return false; }
 
@@ -860,6 +926,7 @@ async function createOrder(konver, model, soni, narx) {
   const now = new Date().toISOString();
   const BoshlangichBosqich = getModelStartStage(model);
   const narxBirlik = parseFloat(narx) || 0;
+  const rangOldindan = (oldindanRang || '').trim() || null;
 
   state.orders.push({
     id: konver, model, jamiSoni: soni, sana: now, holat: 'jarayonda',
@@ -871,14 +938,14 @@ async function createOrder(konver, model, soni, narx) {
       bosqich: BoshlangichBosqich, 
       susal: false, 
       holat: 'kutilmoqda', 
-      rang: null, 
+      rang: rangOldindan, 
       qabulVaqti: null, 
       tugashVaqti: null 
     }]
   });
   
   saveOrders();
-  log('admin', 'yaratdi', konver, model, soni, `Boshlang'ich: ${BoshlangichBosqich}`);
+  log('admin', 'yaratdi', konver, model, soni, `Boshlang'ich: ${BoshlangichBosqich}${rangOldindan ? `, Rang oldindan: ${rangOldindan}` : ''}`);
   return true;
 }
 
@@ -924,7 +991,7 @@ function deleteOrder(konverId) {
   render();
 }
 
-function editOrder(oldKonver, newKonver, newModel, newSoni, newNarx) {
+function editOrder(oldKonver, newKonver, newModel, newSoni, newNarx, newRang) {
   newKonver = newKonver.trim();
   if (!newKonver || !newModel || !newSoni || newSoni <= 0) { alert(L().toliqTuldiring); return; }
   
@@ -935,27 +1002,77 @@ function editOrder(oldKonver, newKonver, newModel, newSoni, newNarx) {
   const o = findOrder(oldKonver);
   if (!o) return;
 
+  const oldJamiSoni = parseInt(o.jamiSoni) || 0;
+  const oldModel = o.model;
+
   o.id = newKonver;
   o.model = newModel;
   o.jamiSoni = newSoni;
   o.narxBirlik = parseFloat(newNarx) || 0;
-  
+
   o.partiyalar.forEach(p => {
     p.pid = p.pid.replace(oldKonver, newKonver);
   });
 
-  // MUHIM: agar konver hali hech qayerga bo'linmagan bo'lsa (hali faqat bitta
-  // partiyada, ya'ni hech kim uni qabul qilib ishlamagan yoki hali bitta
-  // bosqichda to'liq turibdi) — o'sha yagona partiyaning sonini ham yangi
-  // songa moslashtiramiz. Aks holda faqat "jami son" o'zgarib, bo'limlar
-  // hali eski (o'zgarmagan) sonni ko'raverar edi.
-  if (o.partiyalar.length === 1) {
-    o.partiyalar[0].soni = newSoni;
-  } else {
-    // Konver allaqachon bir necha bo'limga bo'linib ketgan bo'lsa, "jami son"ni
-    // avtomatik moslashtirib bo'lmaydi (qaysi bo'lakka qo'shish/ayirish
-    // noaniq) — shuning uchun bunday holatda adminni ogohlantiramiz.
-    alert('Diqqat: bu konver allaqachon bir necha bo\'limga bo\'linib ketgan (' + o.partiyalar.length + ' bo\'lak). "Jami son" yangilandi, lekin mavjud bo\'laklarning har birining o\'z sonini o\'zgartirish uchun "🛠 Tuzatish" oynasidan alohida-alohida amal bajarish tavsiya etiladi.');
+  // Rangni tahrirlash: konverdagi mavjud bo'laklarning rangini bir xil
+  // yangi rangga o'tkazamiz. Bo'sh qoldirilsa rang olib tashlanadi.
+  const rangValue = (newRang || '').trim() || null;
+  o.partiyalar.forEach(p => { p.rang = rangValue; });
+
+  // Son oshirilsa, YANGI KONVER KARTASI OCHILMAYDI. Qo'shilayotgan stullar
+  // aynan shu konverning boshlang'ich bo'limidagi mavjud partiyaga qo'shiladi.
+  // Masalan Barocco 24 -> 36 bo'lsa, zborkadagi 12 -> 24 bo'ladi;
+  // shkurkadagi 12 esa o'z joyida qoladi. Owen uchun esa boshlang'ich bo'lim
+  // shkurka bo'lgani sababli qo'shilgan son shkurkadagi mavjud partiyaga qo'shiladi.
+  const sonFarqi = newSoni - oldJamiSoni;
+  const startStage = getModelStartStage(newModel);
+
+  if (sonFarqi > 0) {
+    let targetPartiya = o.partiyalar.find(p =>
+      p.bosqich === startStage && p.holat !== 'tugadi'
+    );
+
+    if (targetPartiya) {
+      targetPartiya.soni = (parseInt(targetPartiya.soni) || 0) + sonFarqi;
+      targetPartiya.tugatilganSoni = parseInt(targetPartiya.tugatilganSoni) || 0;
+      targetPartiya.rang = rangValue;
+      log('admin', 'konver soni oshirildi', newKonver, newModel, sonFarqi,
+        `Jami: ${oldJamiSoni} -> ${newSoni}; mavjud ${startStage} partiyasiga ${sonFarqi} ta qo'shildi`);
+    } else {
+      // Boshlang'ich bo'limdagi eski partiya allaqachon tugagan bo'lsa,
+      // yangi ish oqimini boshlash uchun partiya yaratishga to'g'ri keladi.
+      o.partiyalar.push({
+        pid: newKonver + '-' + Date.now() + '-add',
+        soni: sonFarqi,
+        tugatilganSoni: 0,
+        bosqich: startStage,
+        susal: false,
+        holat: 'kutilmoqda',
+        rang: rangValue,
+        qabulVaqti: null,
+        tugashVaqti: null,
+        parentPid: null,
+        addedByEdit: true
+      });
+      log('admin', 'konver soni oshirildi', newKonver, newModel, sonFarqi,
+        `Jami: ${oldJamiSoni} -> ${newSoni}; ${startStage} bosqichida yangi oqim boshlandi`);
+    }
+  } else if (sonFarqi < 0) {
+    // Son kamaytirilganda faqat boshlang'ich bo'limda hali bajarilmagan
+    // stullardan kamaytiramiz; allaqachon keyingi bo'limga o'tgan/yopilgan
+    // stullarni avtomatik o'chirmaymiz.
+    let removeQty = Math.abs(sonFarqi);
+    const candidates = o.partiyalar.filter(p => p.bosqich === startStage && p.holat !== 'tugadi').slice().reverse();
+    for (const p of candidates) {
+      if (removeQty <= 0) break;
+      const take = Math.min(removeQty, parseInt(p.soni) || 0);
+      p.soni -= take;
+      removeQty -= take;
+      if (p.soni <= 0) o.partiyalar = o.partiyalar.filter(x => x.pid !== p.pid);
+    }
+    if (removeQty > 0) {
+      alert(`Jami son kamaytirildi, lekin ${removeQty} ta stul allaqachon keyingi bo'limlarga o'tgan yoki yopilgan. Ular avtomatik o'chirilmadi.`);
+    }
   }
 
   if (state.ombor.chiqimlar) {
@@ -1018,6 +1135,13 @@ function confirmDone(rawVal) {
   const curBolim = p.bosqich;
 
   if (p.bosqich === 'lak') {
+    if (p.rang) {
+      // Rang konver yaratilayotganda oldindan tanlangan — Lak karkasdan
+      // qayta so'ralmaydi, to'g'ridan-to'g'ri susal so'roviga o'tadi.
+      state.splitModal = { konverId, doneQty: qty, colorName: p.rang, parentPid: pid, isFull: (qty === max) };
+      render();
+      return;
+    }
     state.colorModal = { konverId, doneQty: qty, parentPid: pid, isFull: (qty === max) };
     render();
     return;
@@ -1428,9 +1552,12 @@ function ticketCard(order, partiya, showActions) {
         ${badge(partiya.holat)}
       </div>
       <div class="meta">
-        <span><b>${partiya.soni}</b> ${l.dona}</span> &middot; <span><b>${stageLbl}</b></span>
+        <span><b>${partiya.soni}</b> / <b>${order.jamiSoni}</b> ${l.dona}</span> &middot; <span><b>${stageLbl}</b></span>
         ${susalTag} ${colorTag}
       </div>
+      ${(['zborka','shkurka','astarsepish','astarshkurka','lak','susal','qoplash'].includes(partiya.bosqich)) ? `
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:3px;">Bo'limdagi miqdor / konver jami: <b>${partiya.soni}</b> / <b>${order.jamiSoni}</b> ${l.dona}</div>
+      ` : ''}
       ${progressBar}
       ${timeInfo}
       ${actionsHtml}
@@ -1719,7 +1846,7 @@ function renderArxiv() {
   <h2 class="section-title">🗄 Arxiv <span style="font-weight:400; font-size:13px; color:var(--ink-soft);">(${state.archive.length} ta konver)</span></h2>
   <div class="card" style="margin-bottom:14px;">
     <input placeholder="Konver yoki fason bo'yicha qidirish..." value="${esc(state.archiveSearch || '')}" oninput="state.archiveSearch=this.value; render();">
-    <button class="secondary" style="width:100%; margin-top:8px;" onclick="runAutoArchive(); alert('Tekshirildi.');">🔄 Hozir tekshirish (qo'lda)</button>
+    <button class="primary" style="width:100%; margin-top:8px;" onclick="openArchivePreview()">🗄 Qo'lda arxivlash (oldindan ko'rsatadi)</button>
   </div>
   ${list.length === 0 ? `<div class="empty">🗄 Arxivda konver yo'q</div>` : list.map(o => {
     const stages = (o.partiyalar || []).map(p => `${getStageLabel(p.bosqich)} (${p.soni})${p.rang ? ' · ' + esc(p.rang) : ''}`).join(', ');
@@ -2245,6 +2372,12 @@ function renderYangiBuyurtma() {
     </div>
     <label class="field-label">${l.soni}</label>
     <input id="fSoni" type="number" min="1" placeholder="12" oninput="updateYangiBuyurtmaJami()">
+    <label class="field-label">Rang (ixtiyoriy)</label>
+    <select id="fRang">
+      <option value="">— Tanlanmagan (Lak karkas so'raydi) —</option>
+      ${COLORS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+    </select>
+    <div style="font-size:11px; color:var(--ink-soft); margin:-6px 0 12px;">Agar rang shu yerda tanlansa, Lak karkas uni so'ramaydi — faqat susal kerakmi deb so'raydi.</div>
     <label class="field-label">Bitta stul narxi ($)</label>
     <input id="fNarx" type="number" min="0" step="0.01" placeholder="200" oninput="updateYangiBuyurtmaJami()">
     <div id="fJamiSumma" style="font-weight:700; font-size:15px; color:#7C3AED; background:#F3E8FF; border-radius:8px; padding:10px 12px; margin-bottom:12px;">Jami summa: $0</div>
@@ -2334,9 +2467,10 @@ async function submitNewOrder() {
   }
   const s = parseInt(document.getElementById('fSoni').value);
   const n = parseFloat(document.getElementById('fNarx').value) || 0;
+  const rang = document.getElementById('fRang') ? document.getElementById('fRang').value : '';
   const btn = document.getElementById('btnSaqlashYangi');
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
-  const ok = await createOrder(k, m, s, n);
+  const ok = await createOrder(k, m, s, n, rang);
   if (btn) { btn.disabled = false; btn.textContent = L().saqlash; }
   if (ok) { switchTab('buyurtmalar'); }
 }
@@ -2357,9 +2491,18 @@ function renderBuyurtmalar() {
     return true;
   });
 
+  // Saralash: 'sana' (standart — eng yangisi tepada) yoki 'konver' (konver raqami tartibida)
+  const sortByKonver = state.buyurtmaSort === 'konver';
+  const sortedOrders = sortByKonver
+    ? filteredOrders.slice().sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
+    : filteredOrders.slice().reverse();
+
   const dateFilterHtml = isAdmin ? `
   <div class="card" style="margin-bottom:14px;">
-    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    <button class="secondary" style="width:100%; margin-bottom:10px;" onclick="state.buyurtmaSort = state.buyurtmaSort === 'konver' ? 'sana' : 'konver'; render();">
+      ${sortByKonver ? '🔢 Saralash: Konver raqami bo\'yicha ▲ (bosing — sana bo\'yicha)' : '📅 Saralash: Sana bo\'yicha ▼ (bosing — konver raqami bo\'yicha)'}
+    </button>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:4px;">
       <div style="flex:1; min-width:130px;">
         <label class="field-label">${l.sanaDan}</label>
         <input type="date" value="${state.buyurtmaFrom || ''}" onchange="state.buyurtmaFrom=this.value;render();">
@@ -2369,7 +2512,7 @@ function renderBuyurtmalar() {
         <input type="date" value="${state.buyurtmaTo || ''}" onchange="state.buyurtmaTo=this.value;render();">
       </div>
     </div>
-    ${(state.buyurtmaFrom || state.buyurtmaTo) ? `<button class="secondary" style="width:100%; margin-top:8px;" onclick="state.buyurtmaFrom='';state.buyurtmaTo='';render();">✕ Filtrni tozalash</button>` : ''}
+    ${(state.buyurtmaFrom || state.buyurtmaTo) ? `<button class="secondary" style="width:100%; margin-top:8px;" onclick="state.buyurtmaFrom='';state.buyurtmaTo='';render();">✕ Sana filtrini tozalash</button>` : ''}
   </div>` : '';
 
   return `
@@ -2377,7 +2520,7 @@ function renderBuyurtmalar() {
   <h2 class="section-title">📝 ${l.buyurtmalar} ${isAdmin ? `<span style="font-weight:400; font-size:13px; color:var(--muted);">(${filteredOrders.length}/${state.orders.length})</span>` : ''}</h2>
   ${dateFilterHtml}
   ${filteredOrders.length === 0 ? `<div class="empty">📋 ${l.hechNarsaYoq}</div>` : ''}
-  ${filteredOrders.slice().reverse().map(o => {
+  ${sortedOrders.map(o => {
     // MUHIM: bu yerda faqat HALI DAVOM ETAYOTGAN (holat 'tugadi' bo'lmagan)
     // bo'laklar ko'rsatiladi. 'tugadi' deb belgilangan yozuvlar — allaqachon
     // keyingi bosqichga o'tib bo'lgan, faqat tarix uchun saqlanadigan eski
@@ -2420,6 +2563,8 @@ function renderEditModal() {
   if (!state.editModal) return '';
   const l = L();
   const { konverId, model, jamiSoni, narxBirlik } = state.editModal;
+  const editOrderObj = findOrder(konverId);
+  const currentRang = editOrderObj ? ((editOrderObj.partiyalar || []).find(p => p.rang)?.rang || '') : '';
 
   return `
   <div class="modal-overlay">
@@ -2438,12 +2583,18 @@ function renderEditModal() {
       <label class="field-label">${l.soni}</label>
       <input id="editSoni" type="number" min="1" value="${jamiSoni}">
 
+      <label class="field-label">Rang</label>
+      <select id="editRang">
+        <option value="" ${!currentRang?'selected':''}>Rang tanlanmagan</option>
+        ${COLORS.map(c => `<option value="${esc(c)}" ${c===currentRang?'selected':''}>${esc(c)}</option>`).join('')}
+      </select>
+
       <label class="field-label">Bitta stul narxi ($)</label>
       <input id="editNarx" type="number" min="0" step="0.01" value="${narxBirlik}">
 
       <div class="modal-actions">
         <button class="secondary" onclick="state.editModal=null;render();">${l.bekor}</button>
-        <button class="primary" onclick="editOrder('${konverId}', document.getElementById('editKonver').value, document.getElementById('editModel').value, parseInt(document.getElementById('editSoni').value), parseFloat(document.getElementById('editNarx').value)||0)">${l.saqlash}</button>
+        <button class="primary" onclick="editOrder('${konverId}', document.getElementById('editKonver').value, document.getElementById('editModel').value, parseInt(document.getElementById('editSoni').value), parseFloat(document.getElementById('editNarx').value)||0, document.getElementById('editRang').value)">${l.saqlash}</button>
       </div>
     </div>
   </div>`;
@@ -2909,6 +3060,7 @@ function render() {
     ${renderColorModal()}
     ${renderSplitModal()}
     ${renderFixModal()}
+    ${renderArchivePreviewModal()}
     ${renderDispatchModal()}
     ${renderManualKirimModal()}
     ${renderEditStockModal()}
